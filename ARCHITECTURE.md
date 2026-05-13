@@ -141,9 +141,9 @@ Backspace удаляет последний символ из буфера.
 - [x] `should_switch(word, current_layout, alt_layout) → bool`
 - [x] Тесты: `"ghbdtn"` в EN → True, `"hello"` в EN → False, `"привет"` в RU → False, слово < 3 символов → False, `"HTML"` → False, `"США"` → False
 
-### Задача 3 — `WordTracker`
-- [ ] Класс `WordTracker`: буфер, `add_char()`, `on_stop_char()`, `on_backspace()`, `on_reset()`
-- [ ] Тесты: накопление буфера, стоп-символ возвращает слово и сбрасывает, backspace убирает символ, reset очищает, несколько стоп-символов подряд не дают пустое слово
+### Задача 3 — `WordTracker` ✅
+- [x] Класс `WordTracker`: буфер, `add_char()`, `on_stop_char()`, `on_backspace()`, `on_reset()`
+- [x] Тесты: накопление буфера, стоп-символ возвращает слово и сбрасывает, backspace убирает символ, reset очищает, несколько стоп-символов подряд не дают пустое слово
 
 ### Задача 4 — `Config`
 - [ ] `Config` dataclass со всеми полями и дефолтами, включая `min_word_length` (3) и `skip_uppercase` (True)
