@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -9,8 +10,70 @@ from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from qtpreved.detector import EN_BIGRAMS, RU_BIGRAMS, score_text, should_switch
+from qtpreved.detector import (
+    EN_BIGRAMS, RU_BIGRAMS, _score_cached, load_bigrams, score_text, should_switch,
+)
 from qtpreved.kbd_map import Layout, load_default_layouts
+
+
+
+class TestLoadBigrams(unittest.TestCase):
+
+    def test_en_bigrams_loaded(self):
+        self.assertGreater(len(EN_BIGRAMS), 0)
+
+    def test_ru_bigrams_loaded(self):
+        self.assertGreater(len(RU_BIGRAMS), 0)
+
+    def test_en_bigrams_contain_th(self):
+        self.assertIn('th', EN_BIGRAMS)
+
+    def test_ru_bigrams_contain_st(self):
+        self.assertIn('ст', RU_BIGRAMS)
+
+    def test_load_nonexistent_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            load_bigrams(Path('/nonexistent/bigrams.json'))
+
+    def test_load_invalid_json_raises(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.json', mode='w', delete=False) as f:
+            f.write('not valid json{{{')
+            tmp = Path(f.name)
+        try:
+            with self.assertRaises(json.JSONDecodeError):
+                load_bigrams(tmp)
+        finally:
+            tmp.unlink()
+
+
+class TestScoreCached(unittest.TestCase):
+
+    def test_matches_score_text(self):
+        self.assertAlmostEqual(
+            _score_cached('hello', 'en'),
+            score_text('hello', EN_BIGRAMS),
+        )
+
+    def test_empty_string_returns_zero(self):
+        self.assertEqual(_score_cached('', 'en'), 0.0)
+
+    def test_single_char_returns_zero(self):
+        self.assertEqual(_score_cached('a', 'en'), 0.0)
+
+    def test_unknown_layout_returns_zero(self):
+        self.assertEqual(_score_cached('hello', 'xx'), 0.0)
+
+    def test_cache_hit_same_result(self):
+        result1 = _score_cached('привет', 'ru')
+        result2 = _score_cached('привет', 'ru')
+        self.assertEqual(result1, result2)
+
+    def test_min_length_one_triggers_short_text_branch(self):
+        # min_length=1 пропускает слово 'a' в should_switch,
+        # _score_cached('а', ...) → len < 2 → 0.0 → не переключаем
+        en, ru = load_default_layouts()
+        self.assertFalse(should_switch('a', en, ru, min_length=1))
 
 
 class TestScoreText(unittest.TestCase):

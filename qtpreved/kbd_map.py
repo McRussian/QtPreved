@@ -67,7 +67,7 @@ def load_layout(path: Path) -> Layout:
     return Layout(name=data['name'], xkb_name=data['xkb_name'], lower=lower, upper=upper)
 
 
-LAYOUTS_DIR = Path(__file__).parent / 'layouts'
+LAYOUTS_DIR = Path(__file__).parent.parent / 'resources' / 'layouts'
 
 
 def load_default_layouts() -> tuple[Layout, Layout]:

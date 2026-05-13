@@ -14,12 +14,16 @@
 
 ```
 QtPreved/
-├── qtpreved/
+├── resources/
 │   ├── layouts/
 │   │   ├── en.json
 │   │   └── ru.json
+│   └── bigrams/
+│       ├── en.json
+│       └── ru.json
+├── qtpreved/
 │   ├── kbd_map.py       # Layout dataclass, загрузка JSON, remap_text()
-│   ├── detector.py      # Биграммные таблицы, score_text(), should_switch()
+│   ├── detector.py      # Загрузка биграмм, score_text(), should_switch()
 │   ├── word_tracker.py  # Буфер текущего слова, чистая логика
 │   ├── config.py        # Config dataclass, load/save JSON
 │   ├── switcher.py      # Логика переключения, undo-стек
@@ -135,7 +139,7 @@ Backspace удаляет последний символ из буфера.
 - [x] `remap_text(text, from_layout, to_layout)` — чистая функция
 - [x] Тесты: загрузка файлов, `"ghbdtn" → "привет"`, обратно, верхний регистр, неизвестные символы сохраняются
 
-### Задача 2 — `Detector` ✅
+### Задача 2 — `Detector` ✅ (биграммы вынесены в `qtpreved/bigrams/`)
 - [x] Биграммные таблицы EN и RU
 - [x] `score_text(text, bigrams) → float`
 - [x] `should_switch(word, current_layout, alt_layout) → bool`
