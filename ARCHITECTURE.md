@@ -175,11 +175,13 @@ Backspace удаляет последний символ из буфера.
 - [x] `replace_selection`: wl-paste → сохранить clipboard → wl-copy → Ctrl+V → восстановить
 - [x] Тесты: логика перевода символа в keycode без железа (мок uinput)
 
-### Задача 8 — `Daemon`
-- [ ] `KeyboardDaemon(QThread)`: открывает evdev, главный цикл
-- [ ] Связывает `WordTracker` + `Detector` + `Switcher`
-- [ ] Qt-сигналы для трея (смена раскладки, статус)
-- [ ] Тест: мок evdev, последовательность `[G,H,B,D,T,N,SPACE]` → вызов `switch_word()`
+### Задача 8 — `Daemon` ✅
+- [x] `KeyboardDaemon(QThread)`: главный цикл evdev, `_process_event()` отдельно (тестируется без потока)
+- [x] Связывает `WordTracker` + `Detector` + `Switcher`
+- [x] Qt-сигнал `layout_changed(str)` для трея
+- [x] Горячие клавиши парсятся из конфига при создании (`_parse_hotkey`)
+- [x] Исключения: по приложению (`excluded_apps`) и по текущему окну (`_excluded_windows`)
+- [x] Тест: мок evdev, `[G,H,B,D,T,N,SPACE]` → `switch_word()` вызван, 98% coverage
 
 ### Задача 9 — `Tray` + `Settings`
 - [ ] `TrayIcon`: иконка, меню, отображение текущей раскладки
