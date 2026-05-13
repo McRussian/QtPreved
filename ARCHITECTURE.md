@@ -154,12 +154,12 @@ Backspace удаляет последний символ из буфера.
 - [x] `load(path) → Config`, `save(config, path)`
 - [x] Тесты: дефолты при пустом файле, roundtrip, отсутствующие поля → дефолт, битый JSON не падает
 
-### Задача 5 — `Switcher` + интерфейсы
-- [ ] Абстрактный `Injector`: `inject_backspaces(n)`, `inject_text(text, layout)`
-- [ ] Абстрактный `LayoutManager`: `get_current()`, `set_layout(index)`, `list_layouts()`
-- [ ] `Switcher`: `switch_word()`, `switch_selection()`, `undo()`
-- [ ] Undo-стек с настраиваемой глубиной
-- [ ] Тесты: через моки — правильная последовательность вызовов, undo возвращает оригинал, undo на пустом стеке не падает, сброс стека при новом вводе
+### Задача 5 — `Switcher` + интерфейсы ✅
+- [x] Абстрактный `Injector`: `inject_backspaces(n)`, `inject_text(text, layout)`, `get_selection()`, `replace_selection(text)`
+- [x] Абстрактный `LayoutManager`: `get_current()`, `set_layout(index)`, `list_layouts()`
+- [x] `Switcher`: `switch_word()`, `switch_selection()`, `undo()`, `on_typing()`
+- [x] Undo-стек с настраиваемой глубиной (deque с maxlen)
+- [x] Тесты: через моки — правильная последовательность вызовов, undo возвращает оригинал, undo на пустом стеке не падает, сброс стека при новом вводе
 
 ### Задача 6 — `LayoutManager` (KDE DBus)
 - [ ] `KDELayoutManager` реализует `LayoutManager`
