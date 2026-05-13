@@ -161,10 +161,10 @@ Backspace удаляет последний символ из буфера.
 - [x] Undo-стек с настраиваемой глубиной (deque с maxlen)
 - [x] Тесты: через моки — правильная последовательность вызовов, undo возвращает оригинал, undo на пустом стеке не падает, сброс стека при новом вводе
 
-### Задача 6 — `LayoutManager` (KDE DBus)
-- [ ] `KDELayoutManager` реализует `LayoutManager`
-- [ ] `get_current()`, `set_layout(index)`, `list_layouts()`
-- [ ] Тесты: мок subprocess, правильные dbus-send команды, парсинг вывода
+### Задача 6 — `LayoutManager` (KDE DBus) ✅
+- [x] `KDELayoutManager` реализует `LayoutManager`
+- [x] `get_current()`, `set_layout(index)`, `list_layouts()`
+- [x] Тесты: мок subprocess, правильные dbus-send команды, парсинг вывода
 
 ### Задача 7 — `Injector` (uinput)
 - [ ] `UinputInjector` реализует `Injector`
