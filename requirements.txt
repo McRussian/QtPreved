@@ -1,0 +1,11 @@
+# Runtime
+PyQt6
+evdev
+
+# System packages (dnf):
+#   sudo dnf install wl-clipboard
+#   sudo usermod -a -G input $USER
+
+# Tests (unittest встроен в Python)
+coverage
+hypothesis
