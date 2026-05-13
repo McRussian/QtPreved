@@ -149,10 +149,10 @@ Backspace удаляет последний символ из буфера.
 - [x] Класс `WordTracker`: буфер, `add_char()`, `on_stop_char()`, `on_backspace()`, `on_reset()`
 - [x] Тесты: накопление буфера, стоп-символ возвращает слово и сбрасывает, backspace убирает символ, reset очищает, несколько стоп-символов подряд не дают пустое слово
 
-### Задача 4 — `Config`
-- [ ] `Config` dataclass со всеми полями и дефолтами, включая `min_word_length` (3) и `skip_uppercase` (True)
-- [ ] `load(path) → Config`, `save(config, path)`
-- [ ] Тесты: дефолты при пустом файле, roundtrip, отсутствующие поля → дефолт, битый JSON не падает
+### Задача 4 — `Config` ✅
+- [x] `Config` dataclass со всеми полями и дефолтами, включая `min_word_length` (3) и `skip_uppercase` (True)
+- [x] `load(path) → Config`, `save(config, path)`
+- [x] Тесты: дефолты при пустом файле, roundtrip, отсутствующие поля → дефолт, битый JSON не падает
 
 ### Задача 5 — `Switcher` + интерфейсы
 - [ ] Абстрактный `Injector`: `inject_backspaces(n)`, `inject_text(text, layout)`
