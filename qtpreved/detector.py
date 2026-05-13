@@ -4,6 +4,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from qtpreved.config import Config
 from qtpreved.kbd_map import Layout
 
 BIGRAMS_DIR = Path(__file__).parent.parent / 'resources' / 'bigrams'
@@ -86,3 +87,30 @@ def should_switch(
     alt_score = _score_cached(remapped.lower(), alt_layout.name)
 
     return alt_score > current_score * threshold and alt_score > min_alt_score
+
+
+class Detector:
+    """Детектор неправильной раскладки, параметры берёт из Config.
+
+    Хранит ссылку на Config — изменения настроек подхватываются автоматически.
+    """
+
+    def __init__(self, config: Config) -> None:
+        self._config = config
+
+    def should_switch(self, word: str, current_layout: Layout, alt_layout: Layout) -> bool:
+        """Определить, нужно ли переключить раскладку для слова.
+
+        Перед анализом проверяет список excluded_words из конфига.
+        Параметры анализа (порог, длина, регистр) тоже берутся из конфига.
+        """
+        if word in self._config.excluded_words:
+            return False
+        # should_switch здесь — модульная функция выше, не рекурсия
+        return should_switch(
+            word, current_layout, alt_layout,
+            min_length=self._config.min_word_length,
+            skip_uppercase=self._config.skip_uppercase,
+            threshold=self._config.detection_threshold,
+            min_alt_score=self._config.min_alt_score,
+        )

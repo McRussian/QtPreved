@@ -10,8 +10,11 @@ from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from unittest.mock import patch
+
+from qtpreved.config import Config
 from qtpreved.detector import (
-    EN_BIGRAMS, RU_BIGRAMS, _score_cached, load_bigrams, score_text, should_switch,
+    EN_BIGRAMS, RU_BIGRAMS, Detector, _score_cached, load_bigrams, score_text, should_switch,
 )
 from qtpreved.kbd_map import Layout, load_default_layouts
 
@@ -196,6 +199,86 @@ class TestShouldSwitch(unittest.TestCase):
         unknown = Layout('xx', 'xx', self.en.lower, self.en.upper)
         result = should_switch('ghbdtn', unknown, self.ru)
         self.assertIsInstance(result, bool)
+
+
+class TestDetectorClass(unittest.TestCase):
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+
+    def _make(self, **kwargs) -> Detector:
+        return Detector(Config(**kwargs))
+
+    # --- Основные сценарии ---
+
+    def test_wrong_layout_returns_true(self):
+        d = self._make()
+        self.assertTrue(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_correct_layout_returns_false(self):
+        d = self._make()
+        self.assertFalse(d.should_switch('hello', self.en, self.ru))
+
+    # --- Excluded words ---
+
+    def test_excluded_word_returns_false(self):
+        d = self._make(excluded_words=['ghbdtn'])
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_excluded_word_case_sensitive(self):
+        # 'GHBDTN' != 'ghbdtn', поэтому не исключается
+        d = self._make(excluded_words=['ghbdtn'])
+        result = d.should_switch('GHBDTN', self.en, self.ru, )
+        # Просто не падает и возвращает bool
+        self.assertIsInstance(result, bool)
+
+    def test_empty_excluded_words_no_effect(self):
+        d = self._make(excluded_words=[])
+        self.assertTrue(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_excluded_words_do_not_affect_others(self):
+        d = self._make(excluded_words=['hello'])
+        self.assertTrue(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_multiple_excluded_words(self):
+        d = self._make(excluded_words=['ghbdtn', 'world'])
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
+        self.assertFalse(d.should_switch('world', self.en, self.ru))
+
+    # --- Параметры из конфига ---
+
+    def test_min_word_length_respected(self):
+        d = self._make(min_word_length=10)
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_skip_uppercase_respected(self):
+        d = self._make(skip_uppercase=True)
+        self.assertFalse(d.should_switch('GHBDTN', self.en, self.ru))
+
+    def test_skip_uppercase_false_analyzes_caps(self):
+        d = self._make(skip_uppercase=False)
+        self.assertTrue(d.should_switch('GHBDTN', self.en, self.ru))
+
+    def test_high_min_alt_score_prevents_switch(self):
+        d = self._make(min_alt_score=999.0)
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_detection_threshold_passed_to_function(self):
+        # Нельзя проверить через 'ghbdtn': current_score=0, 0*999=0 → threshold не влияет.
+        # Проверяем напрямую, что параметр передаётся в модульную функцию.
+        with patch('qtpreved.detector.should_switch', return_value=False) as mock_fn:
+            d = self._make(detection_threshold=7.5)
+            d.should_switch('ghbdtn', self.en, self.ru)
+            self.assertEqual(mock_fn.call_args[1]['threshold'], 7.5)
+
+    # --- Config обновляется динамически ---
+
+    def test_config_change_reflected_immediately(self):
+        config = Config()
+        d = Detector(config)
+        self.assertTrue(d.should_switch('ghbdtn', self.en, self.ru))
+        config.excluded_words.append('ghbdtn')
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
 
 
 if __name__ == '__main__':
