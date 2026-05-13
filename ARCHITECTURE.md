@@ -166,11 +166,12 @@ Backspace удаляет последний символ из буфера.
 - [x] `get_current()`, `set_layout(index)`, `list_layouts()`
 - [x] Тесты: мок subprocess, правильные dbus-send команды, парсинг вывода
 
-### Задача 7 — `Injector` (uinput)
-- [ ] `UinputInjector` реализует `Injector`
-- [ ] `inject_backspaces(n)`, `inject_text(text, layout)`
-- [ ] Логика: символ → (keycode, shift) → press/release/syn
-- [ ] Тесты: логика перевода символа в keycode без железа (мок uinput)
+### Задача 7 — `Injector` (uinput) ✅
+- [x] `UinputInjector` реализует `Injector`
+- [x] `inject_backspaces(n)`, `inject_text(text, layout)`, `get_selection()`, `replace_selection(text)`
+- [x] Логика: символ → (keycode, shift) → press/release/syn
+- [x] `replace_selection`: wl-paste → сохранить clipboard → wl-copy → Ctrl+V → восстановить
+- [x] Тесты: логика перевода символа в keycode без железа (мок uinput)
 
 ### Задача 8 — `Daemon`
 - [ ] `KeyboardDaemon(QThread)`: открывает evdev, главный цикл
