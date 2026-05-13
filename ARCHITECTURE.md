@@ -135,11 +135,11 @@ Backspace удаляет последний символ из буфера.
 - [x] `remap_text(text, from_layout, to_layout)` — чистая функция
 - [x] Тесты: загрузка файлов, `"ghbdtn" → "привет"`, обратно, верхний регистр, неизвестные символы сохраняются
 
-### Задача 2 — `Detector`
-- [ ] Биграммные таблицы EN и RU
-- [ ] `score_text(text, bigrams) → float`
-- [ ] `should_switch(word, current_layout, alt_layout) → bool`
-- [ ] Тесты: `"ghbdtn"` в EN → True, `"hello"` в EN → False, `"привет"` в RU → False, слово < 3 символов → False, `"HTML"` → False, `"США"` → False
+### Задача 2 — `Detector` ✅
+- [x] Биграммные таблицы EN и RU
+- [x] `score_text(text, bigrams) → float`
+- [x] `should_switch(word, current_layout, alt_layout) → bool`
+- [x] Тесты: `"ghbdtn"` в EN → True, `"hello"` в EN → False, `"привет"` в RU → False, слово < 3 символов → False, `"HTML"` → False, `"США"` → False
 
 ### Задача 3 — `WordTracker`
 - [ ] Класс `WordTracker`: буфер, `add_char()`, `on_stop_char()`, `on_backspace()`, `on_reset()`
