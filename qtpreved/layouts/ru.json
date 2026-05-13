@@ -1,0 +1,27 @@
+{
+  "name": "ru",
+  "xkb_name": "ru",
+  "lower": {
+    "KEY_Q": "й", "KEY_W": "ц", "KEY_E": "у", "KEY_R": "к", "KEY_T": "е",
+    "KEY_Y": "н", "KEY_U": "г", "KEY_I": "ш", "KEY_O": "щ", "KEY_P": "з",
+    "KEY_A": "ф", "KEY_S": "ы", "KEY_D": "в", "KEY_F": "а", "KEY_G": "п",
+    "KEY_H": "р", "KEY_J": "о", "KEY_K": "л", "KEY_L": "д",
+    "KEY_Z": "я", "KEY_X": "ч", "KEY_C": "с", "KEY_V": "м",
+    "KEY_B": "и", "KEY_N": "т", "KEY_M": "ь",
+    "KEY_LEFTBRACE": "х", "KEY_RIGHTBRACE": "ъ",
+    "KEY_SEMICOLON": "ж", "KEY_APOSTROPHE": "э",
+    "KEY_COMMA": "б", "KEY_DOT": "ю",
+    "KEY_SPACE": " "
+  },
+  "upper": {
+    "KEY_Q": "Й", "KEY_W": "Ц", "KEY_E": "У", "KEY_R": "К", "KEY_T": "Е",
+    "KEY_Y": "Н", "KEY_U": "Г", "KEY_I": "Ш", "KEY_O": "Щ", "KEY_P": "З",
+    "KEY_A": "Ф", "KEY_S": "Ы", "KEY_D": "В", "KEY_F": "А", "KEY_G": "П",
+    "KEY_H": "Р", "KEY_J": "О", "KEY_K": "Л", "KEY_L": "Д",
+    "KEY_Z": "Я", "KEY_X": "Ч", "KEY_C": "С", "KEY_V": "М",
+    "KEY_B": "И", "KEY_N": "Т", "KEY_M": "Ь",
+    "KEY_LEFTBRACE": "Х", "KEY_RIGHTBRACE": "Ъ",
+    "KEY_SEMICOLON": "Ж", "KEY_APOSTROPHE": "Э",
+    "KEY_COMMA": "Б", "KEY_DOT": "Ю"
+  }
+}

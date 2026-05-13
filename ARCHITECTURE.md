@@ -128,12 +128,12 @@ Backspace удаляет последний символ из буфера.
 
 ## Декомпозиция задач
 
-### Задача 1 — `Layout` + JSON-файлы
-- [ ] Создать `en.json` и `ru.json`
-- [ ] `Layout` dataclass (name, xkb_name, lower, upper)
-- [ ] `load_layout(path)` — загрузка из JSON, резолв KEY_Q → keycode
-- [ ] `remap_text(text, from_layout, to_layout)` — чистая функция
-- [ ] Тесты: загрузка файлов, `"ghbdtn" → "привет"`, обратно, верхний регистр, неизвестные символы сохраняются
+### Задача 1 — `Layout` + JSON-файлы ✅
+- [x] Создать `en.json` и `ru.json`
+- [x] `Layout` dataclass (name, xkb_name, lower, upper)
+- [x] `load_layout(path)` — загрузка из JSON, резолв KEY_Q → keycode
+- [x] `remap_text(text, from_layout, to_layout)` — чистая функция
+- [x] Тесты: загрузка файлов, `"ghbdtn" → "привет"`, обратно, верхний регистр, неизвестные символы сохраняются
 
 ### Задача 2 — `Detector`
 - [ ] Биграммные таблицы EN и RU
