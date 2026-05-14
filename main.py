@@ -6,7 +6,7 @@ import signal
 import sys
 
 from evdev import InputDevice, ecodes, list_devices
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from qtpreved import config as cfg
 from qtpreved.daemon import KeyboardDaemon
@@ -16,11 +16,16 @@ from qtpreved.layout import KDELayoutManager
 from qtpreved.tray import TrayIcon
 
 
+_BUS_VIRTUAL = 0x06
+
+
 def _find_keyboard() -> InputDevice | None:
-    """Вернуть первое устройство с EV_KEY и буквенными клавишами."""
+    """Вернуть первое физическое устройство с EV_KEY и буквенными клавишами."""
     for path in list_devices():
         try:
             dev = InputDevice(path)
+            if dev.info.bustype == _BUS_VIRTUAL:
+                continue
             caps = dev.capabilities()
             keys = caps.get(ecodes.EV_KEY, [])
             if ecodes.KEY_A in keys and ecodes.KEY_Z in keys:
@@ -34,11 +39,13 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    if not QApplication.isSystemTrayAvailable():
+    if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(None, 'QtPreved', 'Системный трей недоступен.')
         sys.exit(1)
 
     device = _find_keyboard()
+    if device is not None:
+        print(f'[qtpreved] keyboard: {device.name!r} ({device.path})')
     if device is None:
         QMessageBox.critical(
             None, 'QtPreved',
