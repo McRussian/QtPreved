@@ -22,7 +22,7 @@ class Config:
     min_word_length: int = 3
     skip_uppercase: bool = True
     detection_threshold: float = 2.0
-    min_alt_score: float = 5.0
+    min_alt_score: float = 2.0
 
     # Undo
     undo_stack_depth: int = 10

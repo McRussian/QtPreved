@@ -51,7 +51,7 @@ class TestConfigDefaults(unittest.TestCase):
         self.assertEqual(self.config.detection_threshold, 2.0)
 
     def test_min_alt_score(self):
-        self.assertEqual(self.config.min_alt_score, 5.0)
+        self.assertEqual(self.config.min_alt_score, 2.0)
 
     def test_undo_stack_depth(self):
         self.assertEqual(self.config.undo_stack_depth, 10)
