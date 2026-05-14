@@ -195,7 +195,7 @@ class KeyboardDaemon(QThread):
         if ch in STOP_CHARS:
             word = self._word_tracker.on_stop_char(ch)
             if word and self._config.auto_switch:
-                self._auto_switch(word)
+                self._auto_switch(word, ch)
         else:
             self._word_tracker.add_char(ch)
             self._switcher.on_typing()
@@ -206,7 +206,7 @@ class KeyboardDaemon(QThread):
         layout = self.current_layout
         return layout.upper.get(code) if self._shift else layout.lower.get(code)
 
-    def _auto_switch(self, word: str) -> None:
+    def _auto_switch(self, word: str, stop_char: str = '') -> None:
         if self._current_window in self._excluded_windows:
             return
         if any(app in self._current_window for app in self._config.excluded_apps):
@@ -214,7 +214,7 @@ class KeyboardDaemon(QThread):
         current = self.current_layout
         alt = self.alt_layout
         if self._detector.should_switch(word, current, alt):
-            self._switcher.switch_word(word, current, alt)
+            self._switcher.switch_word(word, current, alt, stop_char)
             self.layout_changed.emit(alt.name)
 
     # --- Действия горячих клавиш ---

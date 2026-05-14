@@ -26,6 +26,9 @@ class Injector(ABC):
     def replace_selection(self, new_text: str) -> None:
         """Заменить выделение новым текстом через буфер обмена + Ctrl+V."""
 
+    def inject_stop_char(self, ch: str) -> None:
+        """Инжектировать стоп-символ. No-op в базовом классе (переопределяется в UinputInjector)."""
+
 
 class LayoutManager(ABC):
     """Управление активной раскладкой клавиатуры."""
@@ -45,8 +48,9 @@ class LayoutManager(ABC):
 
 @dataclass
 class _UndoEntry:
-    new_text_len: int           # длина инжектированного текста (для удаления)
+    new_text_len: int           # длина инжектированного текста (без стоп-символа)
     original_text: str          # исходный текст для восстановления
+    stop_char: str              # стоп-символ, которым завершилось слово ('' при ручном switch)
     original_layout: Layout     # раскладка для инжекта исходного текста
     original_layout_idx: int    # индекс раскладки для восстановления
 
@@ -68,21 +72,32 @@ class Switcher:
         self._layout_manager = layout_manager
         self._undo_stack: deque[_UndoEntry] = deque(maxlen=max(0, stack_depth))
 
-    def switch_word(self, word: str, current_layout: Layout, alt_layout: Layout) -> bool:
+    def switch_word(
+        self,
+        word: str,
+        current_layout: Layout,
+        alt_layout: Layout,
+        stop_char: str = '',
+    ) -> bool:
         """Переключить последнее набранное слово в альтернативную раскладку.
 
-        Удаляет word backspace-ами, инжектирует ремапнутую версию, переключает раскладку.
+        stop_char — стоп-символ, уже вставленный в текст после слова (при авто-переключении).
+        Если передан, удаляется как часть слова и восстанавливается после него.
         """
         remapped = current_layout.remap_to(word, alt_layout)
         original_idx = self._layout_manager.get_current()
         new_idx = self._find_layout_index(alt_layout)
 
-        self._injector.inject_backspaces(len(word))
+        # +1 чтобы удалить стоп-символ, уже находящийся перед курсором
+        self._injector.inject_backspaces(len(word) + bool(stop_char))
         self._injector.inject_text(remapped, alt_layout)
+        if stop_char:
+            self._injector.inject_stop_char(stop_char)
         self._layout_manager.set_layout(new_idx)
 
         self._undo_stack.append(_UndoEntry(
             new_text_len=len(remapped),
+            stop_char=stop_char,
             original_text=word,
             original_layout=current_layout,
             original_layout_idx=original_idx,
@@ -108,6 +123,7 @@ class Switcher:
 
         self._undo_stack.append(_UndoEntry(
             new_text_len=len(remapped),
+            stop_char='',
             original_text=selected,
             original_layout=current_layout,
             original_layout_idx=original_idx,
@@ -124,8 +140,10 @@ class Switcher:
             return False
 
         entry = self._undo_stack.pop()
-        self._injector.inject_backspaces(entry.new_text_len)
+        self._injector.inject_backspaces(entry.new_text_len + bool(entry.stop_char))
         self._injector.inject_text(entry.original_text, entry.original_layout)
+        if entry.stop_char:
+            self._injector.inject_stop_char(entry.stop_char)
         self._layout_manager.set_layout(entry.original_layout_idx)
         return True
 

@@ -8,6 +8,28 @@ from evdev import UInput, ecodes
 from qtpreved.kbd_map import Layout
 from qtpreved.switcher import Injector
 
+# Стоп-символы → (keycode, нужен_shift). Только US-раскладка: цифры/знаки одинаковы.
+_STOP_CHAR_KEYS: dict[str, tuple[int, bool]] = {
+    ' ':  (ecodes.KEY_SPACE,      False),
+    '\t': (ecodes.KEY_TAB,        False),
+    '\n': (ecodes.KEY_ENTER,      False),
+    '\r': (ecodes.KEY_ENTER,      False),
+    '.':  (ecodes.KEY_DOT,        False),
+    ',':  (ecodes.KEY_COMMA,      False),
+    '!':  (ecodes.KEY_1,          True),
+    '?':  (ecodes.KEY_SLASH,      True),
+    ';':  (ecodes.KEY_SEMICOLON,  False),
+    ':':  (ecodes.KEY_SEMICOLON,  True),
+    '-':  (ecodes.KEY_MINUS,      False),
+    '(':  (ecodes.KEY_9,          True),
+    ')':  (ecodes.KEY_0,          True),
+    '[':  (ecodes.KEY_LEFTBRACE,  False),
+    ']':  (ecodes.KEY_RIGHTBRACE, False),
+    '{':  (ecodes.KEY_LEFTBRACE,  True),
+    '}':  (ecodes.KEY_RIGHTBRACE, True),
+    '"':  (ecodes.KEY_APOSTROPHE, True),
+}
+
 
 class UinputInjector(Injector):
     """Инжект нажатий через uinput и работа с буфером обмена через wl-clipboard.
@@ -79,6 +101,17 @@ class UinputInjector(Injector):
         time.sleep(self._paste_delay)
 
         subprocess.run(['wl-copy'], input=old, text=True, check=True)
+
+    def inject_stop_char(self, ch: str) -> None:
+        """Инжектировать стоп-символ по таблице US-раскладки."""
+        entry = _STOP_CHAR_KEYS.get(ch)
+        if entry is None:
+            return
+        keycode, shifted = entry
+        if shifted:
+            self._press_shifted(keycode)
+        else:
+            self._press(keycode)
 
     def close(self) -> None:
         """Закрыть uinput-устройство."""
