@@ -39,6 +39,9 @@ class MockInjector(Injector):
     def replace_selection(self, new_text):
         self.calls.append(('replace_selection', new_text))
 
+    def paste_text(self, text):
+        self.calls.append(('paste_text', text))
+
 
 class MockLayoutManager(LayoutManager):
     def __init__(self, layouts=None, current=0):
@@ -175,7 +178,7 @@ class TestAutoSwitch(unittest.TestCase):
             ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N,
             ecodes.KEY_SPACE,
         )
-        text_calls = [c[1] for c in self.injector.calls if c[0] == 'inject_text']
+        text_calls = [c[1] for c in self.injector.calls if c[0] == 'paste_text']
         self.assertIn('привет', text_calls)
 
     def test_correct_english_word_not_switched(self):

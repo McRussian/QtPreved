@@ -29,6 +29,9 @@ class Injector(ABC):
     def inject_stop_char(self, ch: str) -> None:
         """Инжектировать стоп-символ. No-op в базовом классе (переопределяется в UinputInjector)."""
 
+    def paste_text(self, text: str) -> None:
+        """Вставить текст через буфер обмена (layout-independent). No-op в базовом классе."""
+
 
 class LayoutManager(ABC):
     """Управление активной раскладкой клавиатуры."""
@@ -90,7 +93,7 @@ class Switcher:
 
         # +1 чтобы удалить стоп-символ, уже находящийся перед курсором
         self._injector.inject_backspaces(len(word) + bool(stop_char))
-        self._injector.inject_text(remapped, alt_layout)
+        self._injector.paste_text(remapped)
         if stop_char:
             self._injector.inject_stop_char(stop_char)
         self._layout_manager.set_layout(new_idx)
@@ -141,7 +144,7 @@ class Switcher:
 
         entry = self._undo_stack.pop()
         self._injector.inject_backspaces(entry.new_text_len + bool(entry.stop_char))
-        self._injector.inject_text(entry.original_text, entry.original_layout)
+        self._injector.paste_text(entry.original_text)
         if entry.stop_char:
             self._injector.inject_stop_char(entry.stop_char)
         self._layout_manager.set_layout(entry.original_layout_idx)

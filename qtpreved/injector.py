@@ -102,6 +102,10 @@ class UinputInjector(Injector):
 
         subprocess.run(['wl-copy'], input=old, text=True, check=True)
 
+    def paste_text(self, text: str) -> None:
+        """Вставить текст через буфер обмена: сохранить clipboard → wl-copy → Ctrl+V → восстановить."""
+        self.replace_selection(text)
+
     def inject_stop_char(self, ch: str) -> None:
         """Инжектировать стоп-символ по таблице US-раскладки."""
         entry = _STOP_CHAR_KEYS.get(ch)

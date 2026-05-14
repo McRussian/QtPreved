@@ -30,6 +30,9 @@ class MockInjector(Injector):
     def replace_selection(self, new_text: str) -> None:
         self.calls.append(('replace_selection', new_text))
 
+    def paste_text(self, text: str) -> None:
+        self.calls.append(('paste_text', text))
+
 
 class MockLayoutManager(LayoutManager):
     def __init__(self, layouts: list[str] | None = None, current: int = 0) -> None:
@@ -75,15 +78,14 @@ class TestSwitchWord(unittest.TestCase):
 
     def test_injects_remapped_text(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
-        kind, text, layout = self.injector.calls[1]
-        self.assertEqual(kind, 'inject_text')
+        kind, text = self.injector.calls[1]
+        self.assertEqual(kind, 'paste_text')
         self.assertEqual(text, 'привет')
-        self.assertIs(layout, self.ru)
 
     def test_backspaces_before_text_injection(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
         self.assertEqual(self.injector.calls[0][0], 'inject_backspaces')
-        self.assertEqual(self.injector.calls[1][0], 'inject_text')
+        self.assertEqual(self.injector.calls[1][0], 'paste_text')
 
     def test_sets_alt_layout(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
@@ -93,7 +95,7 @@ class TestSwitchWord(unittest.TestCase):
         lm = MockLayoutManager(current=1)
         s = Switcher(self.injector, lm)
         s.switch_word('привет', self.ru, self.en)
-        self.assertEqual(self.injector.calls[1][1], 'ghbdtn')
+        self.assertEqual(self.injector.calls[1], ('paste_text', 'ghbdtn'))
         self.assertIn(('set_layout', 0), lm.calls)
 
     def test_pushes_undo_entry(self):
@@ -182,10 +184,7 @@ class TestUndo(unittest.TestCase):
         s.switch_word('ghbdtn', self.en, self.ru)
         injector.calls.clear()
         s.undo()
-        kind, text, layout = injector.calls[1]
-        self.assertEqual(kind, 'inject_text')
-        self.assertEqual(text, 'ghbdtn')
-        self.assertIs(layout, self.en)
+        self.assertEqual(injector.calls[1], ('paste_text', 'ghbdtn'))
 
     def test_undo_restores_original_layout(self):
         s, _, lm = make_switcher(current=0)
@@ -229,7 +228,7 @@ class TestUndo(unittest.TestCase):
         result = s.undo()
         self.assertTrue(result)
         self.assertEqual(injector.calls[0], ('inject_backspaces', 6))
-        self.assertEqual(injector.calls[1][1], 'ghbdtn')
+        self.assertEqual(injector.calls[1], ('paste_text', 'ghbdtn'))
         self.assertEqual(lm.calls, [('set_layout', 0)])
 
 
