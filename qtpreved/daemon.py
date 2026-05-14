@@ -214,7 +214,10 @@ class KeyboardDaemon(QThread):
         current = self.current_layout
         alt = self.alt_layout
         if self._detector.should_switch(word, current, alt):
-            self._switcher.switch_word(word, current, alt, stop_char)
+            try:
+                self._switcher.switch_word(word, current, alt, stop_char)
+            except Exception:
+                return
             self.layout_changed.emit(alt.name)
 
     # --- Действия горячих клавиш ---

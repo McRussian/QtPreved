@@ -39,6 +39,15 @@ class KDELayoutManager(LayoutManager):
         _dbus_call('setLayout', f'uint32:{index}')
 
     def list_layouts(self) -> list[str]:
-        """Вернуть список xkb-имён раскладок в порядке индексов."""
+        """Вернуть список xkb-имён раскладок в порядке индексов.
+
+        DBus-вывод содержит struct с тремя string-полями на раскладку.
+        Берём только первое поле каждого struct — это xkb id ('us', 'ru', …).
+        """
         output = _dbus_call('getLayoutsList')
-        return re.findall(r'string\s+"([^"]*)"', output)
+        result = []
+        for struct_body in re.findall(r'struct\s*\{(.*?)\}', output, re.DOTALL):
+            m = re.search(r'string\s+"([^"]*)"', struct_body)
+            if m:
+                result.append(m.group(1))
+        return result

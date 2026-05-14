@@ -103,8 +103,33 @@ class UinputInjector(Injector):
         subprocess.run(['wl-copy'], input=old, text=True, check=True)
 
     def paste_text(self, text: str) -> None:
-        """Вставить текст через буфер обмена: сохранить clipboard → wl-copy → Ctrl+V → восстановить."""
-        self.replace_selection(text)
+        """Вставить текст через буфер обмена.
+
+        Отличие от replace_selection: явная задержка после wl-copy гарантирует,
+        что compositor обработает запрос до прихода Ctrl+V.
+        """
+        try:
+            old = subprocess.run(
+                ['wl-paste', '--no-newline'],
+                capture_output=True, text=True, check=True,
+            ).stdout
+        except subprocess.CalledProcessError:
+            old = ''
+
+        subprocess.run(['wl-copy'], input=text, text=True, check=True)
+        time.sleep(self._paste_delay)  # дать compositor принять новый буфер
+
+        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
+        self._ui.syn()
+
+        time.sleep(self._paste_delay)  # дать приложению получить буфер до восстановления
+        if old:
+            subprocess.run(['wl-copy'], input=old, text=True)
+        else:
+            subprocess.run(['wl-copy', '--clear'], text=True)
 
     def inject_stop_char(self, ch: str) -> None:
         """Инжектировать стоп-символ по таблице US-раскладки."""
