@@ -108,6 +108,10 @@ class KeyboardDaemon(QThread):
         """Остановить цикл событий."""
         self._running = False
 
+    def reload_hotkeys(self) -> None:
+        """Перестроить список горячих клавиш из текущего конфига."""
+        self._hotkeys = self._build_hotkeys()
+
     # --- Управление исключёнными окнами ---
 
     def set_active_window(self, window_name: str) -> None:
