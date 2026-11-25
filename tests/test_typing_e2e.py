@@ -20,7 +20,7 @@ from tests.screen_sim import _Event, apply_backspaces, retype, type_keys, type_t
 
 RU_IN_US = [
     # Разделители после слова
-    'привет ', 'привет\n', 'привет\t',
+    'привет ',
     # Знаки препинания (набираются клавишами русской раскладки)
     'привет, ', 'привет. ', 'привет! ', 'привет? ', 'привет: ', 'привет; ',
     '(привет) ', '"привет" ', 'привет... ',
@@ -36,7 +36,7 @@ RU_IN_US = [
 ]
 
 EN_IN_RU = [
-    'hello ', 'hello\n', 'hello\t',
+    'hello ',
     'hello, ', 'hello. ', 'hello! ', 'hello? ', 'hello: ', 'hello; ',
     '(hello) ', '"hello" ', 'hello... ',
     # Буквы, которые в русской раскладке дают б ю ж э х ъ ё
@@ -121,6 +121,67 @@ class TestAutoSwitchDisabled(_TypingChecks, unittest.TestCase):
 
 
 
+class TestSwitchOnPunctuation(_TypingChecks, unittest.TestCase):
+    """Знак, который не буква ни в одной раскладке, переключает слово сразу, без пробела.
+
+    Это нужно для последнего слова перед Enter: 'ghbdtn/' + Enter → 'привет.' + Enter.
+    """
+
+    RU_IN_US = [
+        'привет,', 'привет.', 'привет!', 'привет?', 'привет:', 'привет;',
+        '(привет)', '"привет"', 'привет...', 'кто-то,',
+        'привет.\n', 'Привет, мир!\n', 'Как дела?\n',
+    ]
+    EN_IN_RU = [
+        'hello!', 'hello?', 'hello)', '(hello)', 'hello!\n', 'Hello, world!\n',
+    ]
+
+    def test_russian(self):
+        for text in self.RU_IN_US:
+            self.assert_screen(text, 'ru', 'us')
+
+    def test_english(self):
+        for text in self.EN_IN_RU:
+            self.assert_screen(text, 'us', 'ru')
+
+    def test_mark_before_letters_joins_word(self):
+        # '(' и '"' до первой буквы слово не завершают — иначе '"' не пересчиталась бы
+        _, daemon = type_keys([('ru', '"(')], 'us')
+        self.assertEqual(daemon._word_tracker.get_current(), '@(')
+
+    def test_hyphen_and_digits_stay_in_word(self):
+        _, daemon = type_keys([('ru', 'кто-то2')], 'us')
+        self.assertEqual(daemon._word_tracker.get_current(), 'rnj-nj2')
+
+    def test_letter_keys_do_not_end_word(self):
+        # , . ; в английской раскладке — б ю ж в русской: 'hj,jn' — это 'робот'
+        _, daemon = type_keys([('ru', 'робот')], 'us')
+        self.assertEqual(daemon._word_tracker.get_current(), 'hj,jn')
+
+
+class TestTabEnterDoNotSwitch(unittest.TestCase):
+    """Tab и Enter завершают слово без переключения: текст остаётся как набран.
+
+    Сколько символов вставит Tab (табуляция, пробелы до позиции, автодополнение)
+    или что сделает Enter (перевод строки, отправка сообщения), зависит от приложения.
+    """
+
+    def test_word_left_as_typed(self):
+        for text, intended, actual in [
+            ('привет\n', 'ru', 'us'), ('привет\t', 'ru', 'us'),
+            ('hello\n', 'us', 'ru'), ('hello\t', 'us', 'ru'),
+        ]:
+            with self.subTest(text=text):
+                self.assertEqual(type_text(text, intended, actual), retype(text, intended, actual))
+
+    def test_word_after_enter_switched_normally(self):
+        self.assertEqual(type_text('ghbdtn\nghbdtn ', 'us', 'us'), 'ghbdtn\nпривет ')
+
+    def test_word_ending_with_letter_key_before_enter_not_switched(self):
+        # 'hello.' в русской раскладке — 'руддщю': 'ю' — буква, знака нет, Enter не переключает.
+        # Известное ограничение: исправляется вручную (Pause) до нажатия Enter.
+        self.assertEqual(type_text('hello.\n', 'us', 'ru'), 'руддщю\n')
+
 class TestNumpad(unittest.TestCase):
     """Цифры и знаки с цифрового блока: не теряются, не режут слово, точка блока пересчитывается.
 
@@ -136,7 +197,9 @@ class TestNumpad(unittest.TestCase):
         ([('us', 'hello '), 'KEY_KP1', 'KEY_KP0', 'KEY_KPSLASH', 'KEY_KP2', ('us', ' ')], 'ru', 'hello 10/2 '),
         # После переключения на ru точка блока даёт запятую — как и при ручном наборе в ru
         ([('ru', 'работа '), 'KEY_KP2', 'KEY_KPDOT', 'KEY_KP5', ('ru', ' часа ')], 'us', 'работа 2,5 часа '),
-        ([('ru', 'привет'), 'KEY_KPENTER'], 'us', 'привет\n'),
+        # Enter с блока, как и обычный, слово не переключает
+        ([('ru', 'привет'), 'KEY_KPENTER'], 'us', 'ghbdtn\n'),
+        ([('ru', 'привет'), 'KEY_KPSLASH', 'KEY_KPENTER'], 'us', 'привет/\n'),
         (['KEY_KP1', 'KEY_KP2', 'KEY_KP3', ('us', ' ')], 'us', '123 '),
         (['KEY_KP1', 'KEY_KP2', 'KEY_KP3', ('ru', ' ')], 'ru', '123 '),
         (['KEY_KP2', 'KEY_KPASTERISK', 'KEY_KP2', 'KEY_KPPLUS', 'KEY_KP1', ('us', ' ')], 'us', '2*2+1 '),
@@ -162,9 +225,11 @@ class TestNumpad(unittest.TestCase):
         self.assertEqual(daemon._word_tracker.get_current(), '')
 
     def test_operators_independent_of_numlock(self):
-        # / * - + на блоке не зависят от NumLock
-        _, daemon = type_keys([('us', 'ab'), 'KEY_KPSLASH', 'KEY_KPMINUS'], 'us', numlock=False)
-        self.assertEqual(daemon._word_tracker.get_current(), 'ab/-')
+        # / * - + на блоке не зависят от NumLock: печатаются, а не работают как навигация
+        screen, daemon = type_keys([('us', 'ab'), 'KEY_KPMINUS'], 'us', numlock=False)
+        self.assertEqual(daemon._word_tracker.get_current(), 'ab-')
+        screen, _ = type_keys([('us', 'ab'), 'KEY_KPSLASH', 'KEY_KPASTERISK'], 'us', numlock=False)
+        self.assertEqual(screen, 'ab/*')
 
     def test_numlock_unknown_resets_word(self):
         # Устройство без leds() — состояние NumLock неизвестно, безопаснее сбросить слово

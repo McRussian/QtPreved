@@ -40,21 +40,35 @@ class UinputInjector(Injector):
     Принимает готовое UInput-устройство — реальное или мок для тестов.
     """
 
-    def __init__(self, ui: UInput | None = None, paste_delay: float = 0.05) -> None:
+    def __init__(
+        self, ui: UInput | None = None, paste_delay: float = 0.05, key_delay: float = 0.005,
+    ) -> None:
         self._ui = ui if ui is not None else UInput()
         self._paste_delay = paste_delay
+        self._key_delay = key_delay
+
+    def _emit(self, keycode: int, value: int) -> None:
+        """Одно событие клавиши отдельным кадром (syn) с паузой после.
+
+        Нажатие и отпускание в одном кадре и без пауз libinput/KWin обрабатывают
+        ненадёжно — часть нажатий теряется (оставались недостёртые буквы).
+        """
+        self._ui.write(ecodes.EV_KEY, keycode, value)
+        self._ui.syn()
+        if self._key_delay:
+            time.sleep(self._key_delay)
 
     def _press(self, keycode: int) -> None:
-        self._ui.write(ecodes.EV_KEY, keycode, 1)
-        self._ui.write(ecodes.EV_KEY, keycode, 0)
-        self._ui.syn()
+        self._emit(keycode, 1)
+        self._emit(keycode, 0)
+
+    def _press_with(self, modifier: int, keycode: int) -> None:
+        self._emit(modifier, 1)
+        self._press(keycode)
+        self._emit(modifier, 0)
 
     def _press_shifted(self, keycode: int) -> None:
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 1)
-        self._ui.write(ecodes.EV_KEY, keycode, 1)
-        self._ui.write(ecodes.EV_KEY, keycode, 0)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 0)
-        self._ui.syn()
+        self._press_with(ecodes.KEY_LEFTSHIFT, keycode)
 
     def inject_backspaces(self, n: int) -> None:
         log.debug('backspace ×%d', n)
@@ -96,11 +110,7 @@ class UinputInjector(Injector):
 
         subprocess.run(['wl-copy'], input=new_text, text=True, check=True)
 
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
-        self._ui.syn()
+        self._press_with(ecodes.KEY_LEFTCTRL, ecodes.KEY_V)
 
         time.sleep(self._paste_delay)
 
@@ -124,11 +134,7 @@ class UinputInjector(Injector):
         subprocess.run(['wl-copy'], input=text, text=True, check=True)
         time.sleep(self._paste_delay)  # дать compositor принять новый буфер
 
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
-        self._ui.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
-        self._ui.syn()
+        self._press_with(ecodes.KEY_LEFTCTRL, ecodes.KEY_V)
 
         time.sleep(self._paste_delay)  # дать приложению получить буфер до восстановления
         if old:

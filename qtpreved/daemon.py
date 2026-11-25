@@ -26,6 +26,14 @@ _KEYPAD_NUMLOCK_KEYS = frozenset(
 
 log = logging.getLogger(__name__)
 
+# Завершают слово без переключения: Tab и Enter в разных приложениях ведут себя
+# по-разному (пробелы вместо табуляции, автодополнение, отправка сообщения),
+# и число символов, которые надо стереть, заранее неизвестно
+_RESET_KEYS = frozenset({ecodes.KEY_TAB, ecodes.KEY_ENTER, ecodes.KEY_KPENTER})
+
+# Знаки, которые остаются внутри слова и не запускают переключение: кто-то, snake_case
+_IN_WORD_MARKS = frozenset('-_')
+
 _SHIFT_KEYS = frozenset({ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT})
 _CTRL_KEYS = frozenset({ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL})
 _ALT_KEYS = frozenset({ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT})
@@ -198,6 +206,11 @@ class KeyboardDaemon(QThread):
             self._word_tracker.on_backspace()
             return
 
+        if code in _RESET_KEYS:
+            log.debug('key %d: слово %r завершено без переключения', code, self._word_tracker.get_current())
+            self._reset_word()
+            return
+
         ch = self._resolve_char(code)
         if ch is None:
             self._reset_word()
@@ -213,6 +226,32 @@ class KeyboardDaemon(QThread):
         else:
             self._word_tracker.add_char(ch, (code, self._shift))
             self._switcher.on_typing()
+            if self._ends_word(code):
+                self._finish_word_on_mark()
+
+    def _ends_word(self, code: int) -> bool:
+        """Знак, который завершает слово: не буква, не цифра и не дефис ни в одной раскладке.
+
+        ',' '.' ';' '[' ... в английской раскладке — буквы русской, поэтому слово не завершают.
+        """
+        key = [(code, self._shift)]
+        chars = self._en.render(key) + self._ru.render(key)
+        return bool(chars) and not any(c.isalpha() or c.isdigit() or c in _IN_WORD_MARKS for c in chars)
+
+    def _finish_word_on_mark(self) -> None:
+        """Слово со знаком на конце ('ghbdtn?') переключается сразу, без пробела.
+
+        Знак до первой буквы ('(' или '"' перед словом) слово не завершает, а входит в него.
+        """
+        word = self._word_tracker.get_current()
+        keys = self._word_tracker.get_keys()
+        remapped = self._remap(word, keys, self.current_layout, self.alt_layout)
+        if not any(c.isalpha() for c in word + remapped):
+            return
+        self._word_tracker.on_reset()
+        if self._config.auto_switch:
+            self._auto_switch(word, '', keys)
+        self._after_word = True
 
     def _reset_word(self) -> None:
         self._word_tracker.on_reset()

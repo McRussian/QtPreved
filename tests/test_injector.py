@@ -16,7 +16,7 @@ from qtpreved.kbd_map import load_default_layouts
 
 def make_injector(paste_delay: float = 0.0) -> tuple[UinputInjector, MagicMock]:
     ui = MagicMock()
-    return UinputInjector(ui=ui, paste_delay=paste_delay), ui
+    return UinputInjector(ui=ui, paste_delay=paste_delay, key_delay=0.0), ui
 
 
 def _ok(stdout: str = '') -> MagicMock:
@@ -40,13 +40,31 @@ class TestInjectBackspaces(unittest.TestCase):
         self.ui.write.assert_any_call(ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 1)
         self.ui.write.assert_any_call(ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 0)
 
-    def test_one_backspace_one_syn(self):
+    def test_one_backspace_syn_per_event(self):
+        # Нажатие и отпускание — отдельные кадры
         self.inj.inject_backspaces(1)
-        self.assertEqual(self.ui.syn.call_count, 1)
+        self.assertEqual(self.ui.syn.call_count, 2)
 
-    def test_three_backspaces_three_syns(self):
+    def test_three_backspaces_syn_per_event(self):
         self.inj.inject_backspaces(3)
-        self.assertEqual(self.ui.syn.call_count, 3)
+        self.assertEqual(self.ui.syn.call_count, 6)
+
+    def test_syn_between_press_and_release(self):
+        self.inj.inject_backspaces(1)
+        names = [c[0] for c in self.ui.mock_calls]
+        self.assertEqual(names, ['write', 'syn', 'write', 'syn'])
+
+    def test_key_delay_after_each_event(self):
+        inj = UinputInjector(ui=self.ui, paste_delay=0.0, key_delay=0.01)
+        with patch('qtpreved.injector.time.sleep') as sleep:
+            inj.inject_backspaces(2)
+        self.assertEqual(sleep.call_count, 4)
+        sleep.assert_called_with(0.01)
+
+    def test_zero_key_delay_no_sleep(self):
+        with patch('qtpreved.injector.time.sleep') as sleep:
+            self.inj.inject_backspaces(2)
+        sleep.assert_not_called()
 
     def test_three_backspaces_six_writes(self):
         self.inj.inject_backspaces(3)
@@ -70,9 +88,9 @@ class TestInjectTextUnshifted(unittest.TestCase):
         self.inj.inject_text('', self.en)
         self.ui.write.assert_not_called()
 
-    def test_single_lowercase_char_one_syn(self):
+    def test_single_lowercase_char_syn_per_event(self):
         self.inj.inject_text('g', self.en)
-        self.assertEqual(self.ui.syn.call_count, 1)
+        self.assertEqual(self.ui.syn.call_count, 2)
 
     def test_single_lowercase_char_correct_keycode(self):
         keycode, _ = self.en._char_to_key['g']
@@ -85,18 +103,18 @@ class TestInjectTextUnshifted(unittest.TestCase):
         for c in self.ui.write.call_args_list:
             self.assertNotEqual(c, call(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 1))
 
-    def test_three_chars_three_syns(self):
+    def test_three_chars_syn_per_event(self):
         self.inj.inject_text('abc', self.en)
-        self.assertEqual(self.ui.syn.call_count, 3)
+        self.assertEqual(self.ui.syn.call_count, 6)
 
     def test_unknown_char_skipped(self):
         self.inj.inject_text('漢', self.en)
         self.ui.write.assert_not_called()
 
     def test_mixed_known_unknown(self):
-        # '漢' is unknown, 'g' is known → 1 syn
+        # '漢' is unknown, 'g' is known → 2 syn (нажатие и отпускание)
         self.inj.inject_text('漢g漢', self.en)
-        self.assertEqual(self.ui.syn.call_count, 1)
+        self.assertEqual(self.ui.syn.call_count, 2)
 
     def test_ru_layout_correct_char(self):
         keycode, shifted = self.ru._char_to_key['г']
@@ -135,9 +153,10 @@ class TestInjectTextShifted(unittest.TestCase):
         shift_release = calls.index(call(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 0))
         self.assertLess(key_release, shift_release)
 
-    def test_uppercase_one_syn(self):
+    def test_uppercase_syn_per_event(self):
+        # Shift↓, G↓, G↑, Shift↑ — четыре кадра
         self.inj.inject_text('G', self.en)
-        self.assertEqual(self.ui.syn.call_count, 1)
+        self.assertEqual(self.ui.syn.call_count, 4)
 
     def test_uppercase_four_writes(self):
         self.inj.inject_text('G', self.en)
@@ -145,7 +164,7 @@ class TestInjectTextShifted(unittest.TestCase):
 
     def test_mixed_case_correct_syn_count(self):
         self.inj.inject_text('aB', self.en)
-        self.assertEqual(self.ui.syn.call_count, 2)
+        self.assertEqual(self.ui.syn.call_count, 6)
 
 
 class TestGetSelection(unittest.TestCase):
@@ -239,6 +258,12 @@ class TestReplaceSelection(unittest.TestCase):
         v_release = calls.index(call(ecodes.EV_KEY, ecodes.KEY_V, 0))
         ctrl_release = calls.index(call(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0))
         self.assertLess(v_release, ctrl_release)
+
+    def test_ctrl_v_each_event_own_frame(self):
+        with patch('qtpreved.injector.subprocess.run', return_value=_ok('')):
+            self.inj.paste_text('привет')
+        names = [c[0] for c in self.ui.mock_calls]
+        self.assertEqual(names, ['write', 'syn'] * 4)
 
     def test_syn_after_ctrl_v(self):
         with self._patch_subprocess():
