@@ -3,7 +3,7 @@
 Слово-исключение задаётся так, как оно набирается (в текущей раскладке):
 'ghbdtn' — набранное латиницей намеренно (ник, пароль, транслит), 'США' — правильное
 слово, которое детектор ошибочно считает набранным не в той раскладке.
-Знаки по краям не мешают: '(ghbdtn)' тоже исключение. Ручное переключение
+Знаки по краям и регистр не мешают: '(ghbdtn)' и 'Ghbdtn' тоже исключения. Ручное переключение
 горячей клавишей исключения не учитывает — пользователь просит явно.
 """
 from __future__ import annotations
@@ -47,6 +47,29 @@ class TestExcludedWordNotSwitched(unittest.TestCase):
         spoiled = type_text('США ', 'ru', 'ru', Config(skip_uppercase=False))
         self.assertEqual(spoiled, 'CIF ')
         config = Config(skip_uppercase=False, excluded_words=['США'])
+        self.assertEqual(type_text('США ', 'ru', 'ru', config), 'США ')
+
+
+class TestExclusionCaseInsensitive(unittest.TestCase):
+
+    def test_capitalized_at_sentence_start(self):
+        config = Config(excluded_words=['ghbdtn'])
+        self.assertEqual(type_text('Ghbdtn, ', 'us', 'us', config), 'Ghbdtn, ')
+
+    def test_all_caps_with_uppercase_analysis_enabled(self):
+        config = Config(excluded_words=['ghbdtn'], skip_uppercase=False)
+        self.assertEqual(type_text('GHBDTN ', 'us', 'us', config), 'GHBDTN ')
+
+    def test_list_entry_with_capitals(self):
+        config = Config(excluded_words=['GHBDTN'])
+        self.assertEqual(type_text('ghbdtn ', 'us', 'us', config), 'ghbdtn ')
+
+    def test_cyrillic(self):
+        config = Config(excluded_words=['руддщ'])
+        self.assertEqual(type_text('Руддщ ', 'ru', 'ru', config), 'Руддщ ')
+
+    def test_abbreviation_any_case(self):
+        config = Config(skip_uppercase=False, excluded_words=['сша'])
         self.assertEqual(type_text('США ', 'ru', 'ru', config), 'США ')
 
 

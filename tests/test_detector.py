@@ -268,12 +268,23 @@ class TestDetectorClass(unittest.TestCase):
         d = self._make(excluded_words=['ghbdtn'])
         self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
 
-    def test_excluded_word_case_sensitive(self):
-        # 'GHBDTN' != 'ghbdtn', поэтому не исключается
+    def test_excluded_word_case_insensitive(self):
+        d = self._make(excluded_words=['ghbdtn'], skip_uppercase=False)
+        for word in ['Ghbdtn', 'GHBDTN', 'gHbDtN']:
+            with self.subTest(word=word):
+                self.assertFalse(d.should_switch(word, self.en, self.ru))
+
+    def test_excluded_word_in_list_with_capitals(self):
+        d = self._make(excluded_words=['Ghbdtn'])
+        self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
+
+    def test_excluded_cyrillic_case_insensitive(self):
+        d = self._make(excluded_words=['руддщ'])
+        self.assertFalse(d.should_switch('Руддщ', self.ru, self.en))
+
+    def test_excluded_case_insensitive_with_punctuation(self):
         d = self._make(excluded_words=['ghbdtn'])
-        result = d.should_switch('GHBDTN', self.en, self.ru, )
-        # Просто не падает и возвращает bool
-        self.assertIsInstance(result, bool)
+        self.assertFalse(d.should_switch('Ghbdtn,', self.en, self.ru))
 
     def test_empty_excluded_words_no_effect(self):
         d = self._make(excluded_words=[])

@@ -196,10 +196,12 @@ class Detector:
     ) -> bool:
         """Определить, нужно ли переключить раскладку для слова.
 
-        Перед анализом проверяет список excluded_words из конфига.
+        Перед анализом проверяет список excluded_words из конфига — без учёта регистра
+        и знаков по краям ('Ghbdtn,' исключено при 'ghbdtn' в списке).
         Параметры анализа (порог, длина, регистр) тоже берутся из конфига.
         """
-        if word in self._config.excluded_words or strip_non_letters(word) in self._config.excluded_words:
+        excluded = {w.casefold() for w in self._config.excluded_words}
+        if word.casefold() in excluded or strip_non_letters(word).casefold() in excluded:
             return False
         # should_switch здесь — модульная функция выше, не рекурсия
         return should_switch(
