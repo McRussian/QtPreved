@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 
 from qtpreved.switcher import LayoutManager
+
+log = logging.getLogger(__name__)
 
 _DEST = 'org.kde.keyboard'
 _PATH = '/Layouts'
@@ -21,7 +24,11 @@ def _dbus_call(method: str, *args: str) -> str:
         f'{_IFACE}.{method}',
         *args,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        log.error('DBus %s%s: код %d, %s', method, args, e.returncode, (e.stderr or '').strip())
+        raise
     return result.stdout
 
 
@@ -36,6 +43,7 @@ class KDELayoutManager(LayoutManager):
 
     def set_layout(self, index: int) -> None:
         """Переключить раскладку по индексу через DBus."""
+        log.debug('DBus setLayout %d', index)
         _dbus_call('setLayout', f'uint32:{index}')
 
     def list_layouts(self) -> list[str]:

@@ -9,7 +9,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication
 from evdev import ecodes
 
 from qtpreved.config import Config
@@ -87,7 +87,8 @@ _app = None
 
 def setUpModule():
     global _app
-    _app = QCoreApplication.instance() or QCoreApplication(sys.argv[:1])
+    # QApplication (а не QCoreApplication): в том же процессе тестам настроек и трея нужны виджеты
+    _app = QApplication.instance() or QApplication(sys.argv[:1])
 
 
 # ---------------------------------------------------------------------------

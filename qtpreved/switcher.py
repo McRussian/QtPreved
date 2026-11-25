@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
 
 from qtpreved.kbd_map import Layout
+
+log = logging.getLogger(__name__)
 
 
 class Injector(ABC):
@@ -101,6 +104,7 @@ class Switcher:
         # и отдельное нажатие пробела приложение может обработать раньше вставки
         self._injector.paste_text(remapped + stop_char)
         self._layout_manager.set_layout(new_idx)
+        log.debug('слово %r → %r, стоп %r, раскладка %d → %d', word, remapped, stop_char, original_idx, new_idx)
 
         self._undo_stack.append(_UndoEntry(
             new_text_len=len(remapped),
@@ -126,6 +130,7 @@ class Switcher:
         new_idx = self._find_layout_index(alt_layout)
 
         self._injector.replace_selection(remapped)
+        log.debug('выделение %r → %r, раскладка %d → %d', selected, remapped, original_idx, new_idx)
         self._layout_manager.set_layout(new_idx)
 
         self._undo_stack.append(_UndoEntry(
@@ -150,10 +155,15 @@ class Switcher:
         self._injector.inject_backspaces(entry.new_text_len + bool(entry.stop_char))
         self._injector.paste_text(entry.original_text + entry.stop_char)
         self._layout_manager.set_layout(entry.original_layout_idx)
+        log.debug('отмена: стёрто %d, возвращено %r, раскладка → %d',
+                  entry.new_text_len + bool(entry.stop_char), entry.original_text + entry.stop_char,
+                  entry.original_layout_idx)
         return True
 
     def on_typing(self) -> None:
         """Сбросить undo-стек при вводе нового символа после переключения."""
+        if self._undo_stack:
+            log.debug('новый ввод — история отмены очищена (%d)', len(self._undo_stack))
         self._undo_stack.clear()
 
     @property

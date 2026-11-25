@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections import Counter
 from functools import lru_cache
@@ -8,6 +9,8 @@ from pathlib import Path
 
 from qtpreved.config import Config
 from qtpreved.kbd_map import Layout
+
+log = logging.getLogger(__name__)
 
 TRIGRAMS_DIR = Path(__file__).parent.parent / 'resources' / 'trigrams'
 
@@ -172,14 +175,20 @@ def should_switch(
         remapped = current_layout.remap_to(word, alt_layout)
     current_core, alt_core = strip_common_edges(word, remapped)
     if len(current_core) < min_length or not any(ch.isalpha() for ch in current_core):
+        log.debug('%r: короче %d символов или без букв — не анализируется', word, min_length)
         return False
     if skip_uppercase and alt_core.isupper():
+        log.debug('%r: верхний регистр — пропуск', word)
         return False
 
     current_score = _score_cached(current_core.lower(), current_layout.name)
     alt_score = _score_cached(alt_core.lower(), alt_layout.name)
 
-    return alt_score - current_score > margin and alt_score > min_alt_logprob
+    result = alt_score - current_score > margin and alt_score > min_alt_logprob
+    log.debug('%r [%s %.2f] / %r [%s %.2f]: разница %+.2f (запас %.2f, минимум %.1f) → %s',
+              current_core, current_layout.name, current_score, alt_core, alt_layout.name, alt_score,
+              alt_score - current_score, margin, min_alt_logprob, 'переключать' if result else 'нет')
+    return result
 
 
 class Detector:
@@ -202,6 +211,7 @@ class Detector:
         """
         excluded = {w.casefold() for w in self._config.excluded_words}
         if word.casefold() in excluded or strip_non_letters(word).casefold() in excluded:
+            log.debug('%r: в словах-исключениях', word)
             return False
         # should_switch здесь — модульная функция выше, не рекурсия
         return should_switch(

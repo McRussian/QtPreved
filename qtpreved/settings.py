@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from qtpreved.config import Config
+from qtpreved.logs import LOG_PATH
 
 _AUTOSTART_PATH = Path.home() / '.config' / 'autostart' / 'qtpreved.desktop'
 
@@ -168,8 +170,16 @@ class SettingsDialog(QDialog):
         self._undo_depth.setValue(c.undo_stack_depth)
         self._autostart = QCheckBox()
         self._autostart.setChecked(c.autostart)
+        self._debug_log = QCheckBox()
+        self._debug_log.setChecked(c.debug_log)
         form.addRow('Глубина undo:', self._undo_depth)
         form.addRow('Автозапуск:', self._autostart)
+        form.addRow('Подробный лог:', self._debug_log)
+        hint = QLabel(f'Файл: {LOG_PATH}\nЗаписывает все нажатия клавиш — включайте только для отладки.')
+        hint.setWordWrap(True)
+        hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        hint.setStyleSheet('color: gray; font-size: 11px;')
+        form.addRow('', hint)
         return w
 
     # --- Apply ---
@@ -188,6 +198,7 @@ class SettingsDialog(QDialog):
         c.excluded_words = self._exc_words.values()
         c.excluded_apps = self._exc_apps.values()
         c.undo_stack_depth = self._undo_depth.value()
+        c.debug_log = self._debug_log.isChecked()
         autostart_changed = c.autostart != self._autostart.isChecked()
         c.autostart = self._autostart.isChecked()
         if autostart_changed:

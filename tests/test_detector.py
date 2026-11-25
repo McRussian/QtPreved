@@ -367,5 +367,27 @@ class TestShouldSwitchRemapped(unittest.TestCase):
         d = Detector(Config(excluded_words=['ghbdtn']))
         self.assertFalse(d.should_switch('ghbdtn?', self.en, self.ru))
 
+
+class TestDetectorLogging(unittest.TestCase):
+    """В подробный лог пишутся оценки и причина решения — для разбора ошибок детектора."""
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+
+    def test_scores_logged(self):
+        with self.assertLogs('qtpreved.detector', level='DEBUG') as cm:
+            should_switch('ghbdtn', self.en, self.ru)
+        self.assertTrue(any("'ghbdtn' [en" in m and "'привет' [ru" in m and 'переключать' in m for m in cm.output))
+
+    def test_short_word_reason_logged(self):
+        with self.assertLogs('qtpreved.detector', level='DEBUG') as cm:
+            should_switch('gh', self.en, self.ru)
+        self.assertTrue(any('не анализируется' in m for m in cm.output))
+
+    def test_excluded_reason_logged(self):
+        with self.assertLogs('qtpreved.detector', level='DEBUG') as cm:
+            Detector(Config(excluded_words=['ghbdtn'])).should_switch('ghbdtn', self.en, self.ru)
+        self.assertTrue(any('исключениях' in m for m in cm.output))
+
 if __name__ == '__main__':
     unittest.main()

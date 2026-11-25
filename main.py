@@ -11,6 +11,7 @@ from evdev import InputDevice, ecodes, list_devices
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from qtpreved import config as cfg
+from qtpreved import logs
 from qtpreved.daemon import KeyboardDaemon
 from qtpreved.injector import UinputInjector
 from qtpreved.kbd_map import load_default_layouts
@@ -19,6 +20,8 @@ from qtpreved.tray import TrayIcon
 
 
 _BUS_VIRTUAL = 0x06
+
+log = logging.getLogger('qtpreved.main')
 
 
 def _find_keyboard() -> InputDevice | None:
@@ -44,13 +47,18 @@ def _find_keyboard() -> InputDevice | None:
             continue
     for dev in candidates:
         print(f'[qtpreved] kbd candidate: {dev.name!r}  phys={dev.phys}  bus={dev.info.bustype:#04x}')
+        log.info('кандидат клавиатуры: %r phys=%s bus=%#04x path=%s', dev.name, dev.phys, dev.info.bustype, dev.path)
     return candidates[0] if candidates else None
 
 
 def main() -> None:
     if os.environ.get('QTPREVED_DEBUG'):
-        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s.%(msecs)03d %(name)s: %(message)s',
-                            datefmt='%H:%M:%S')
+        logs.enable_console()
+    conf = cfg.load()
+    logs.apply_logging(conf.debug_log)
+    log.info('запуск: Python %s, конфиг %s', sys.version.split()[0], cfg.CONFIG_PATH)
+    log.info('настройки: %s', conf)
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -70,9 +78,12 @@ def main() -> None:
         )
         sys.exit(1)
 
-    conf = cfg.load()
     en, ru = load_default_layouts()
     layout_manager = KDELayoutManager()
+    try:
+        log.info('раскладки KDE: %s, текущая %d', layout_manager.list_layouts(), layout_manager.get_current())
+    except Exception:
+        log.exception('не удалось получить раскладки KDE')
     injector = UinputInjector()
     daemon = KeyboardDaemon(conf, injector, layout_manager, en, ru, device)
 

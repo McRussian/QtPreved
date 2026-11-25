@@ -119,6 +119,7 @@ class UinputInjector(Injector):
             data = subprocess.run(
                 ['wl-paste', '--no-newline', '--type', mime], capture_output=True, check=True,
             ).stdout
+            log.debug('буфер обмена сохранён: %s, %d байт (типов %d)', mime, len(data), len(types))
             return mime, data
         except Exception:
             log.debug('буфер обмена не сохранён', exc_info=True)
@@ -130,9 +131,11 @@ class UinputInjector(Injector):
         try:
             if saved is None:
                 subprocess.run(['wl-copy', '--clear'])
+                log.debug('буфер обмена очищен')
             else:
                 mime, data = saved
                 subprocess.run(['wl-copy', '--type', mime], input=data)
+                log.debug('буфер обмена восстановлен: %s, %d байт', mime, len(data))
         except OSError:
             log.debug('буфер обмена не восстановлен', exc_info=True)
 

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from qtpreved import config as cfg
+from qtpreved import logs
 from qtpreved.config import Config
 from qtpreved.daemon import KeyboardDaemon
+
+log = logging.getLogger(__name__)
 
 _COLORS = {
     'ru': ('#1565c0', '#ffffff'),
@@ -67,3 +72,5 @@ class TrayIcon(QSystemTrayIcon):
         if dlg.exec():
             cfg.save(self._config)
             self._daemon.reload_hotkeys()
+            logs.apply_logging(self._config.debug_log)
+            log.info('настройки сохранены: %s', self._config)

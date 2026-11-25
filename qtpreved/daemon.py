@@ -180,6 +180,8 @@ class KeyboardDaemon(QThread):
             self._alt = value != 0
             return
 
+        if value == 2:
+            log.debug('автоповтор клавиши %d — не учитывается', code)
         if value != 1:  # только key_down
             return
 
@@ -189,6 +191,7 @@ class KeyboardDaemon(QThread):
                     and self._ctrl == req_ctrl
                     and self._shift == req_shift
                     and self._alt == req_alt):
+                log.info('горячая клавиша %d: %s', code, action.__name__)
                 action()
                 return
 
@@ -196,25 +199,25 @@ class KeyboardDaemon(QThread):
 
     def _handle_typing(self, code: int) -> None:
         if self._ctrl or self._alt:
-            self._reset_word()
+            self._reset_word(f'сочетание с Ctrl/Alt, клавиша {code}')
             return
 
         if code == ecodes.KEY_ESC:
-            self._reset_word()
+            self._reset_word('Esc')
             return
 
         if code == ecodes.KEY_BACKSPACE:
             self._word_tracker.on_backspace()
+            log.debug('backspace, буфер %r', self._word_tracker.get_current())
             return
 
         if code in _RESET_KEYS:
-            log.debug('key %d: слово %r завершено без переключения', code, self._word_tracker.get_current())
-            self._reset_word()
+            self._reset_word(f'Tab/Enter (клавиша {code}) — без переключения')
             return
 
         ch = self._resolve_char(code)
         if ch is None:
-            self._reset_word()
+            self._reset_word(f'клавиша {code} без символа (навигация, F-клавиши, блок без NumLock)')
             return
 
         log.debug('key %d → %r, буфер %r', code, ch, self._word_tracker.get_current())
@@ -263,11 +266,12 @@ class KeyboardDaemon(QThread):
         """
         layout = self.current_layout.name
         if self._word_tracker.get_current() and layout != self._word_layout:
-            log.debug('раскладка сменилась посреди слова %r — слово сброшено', self._word_tracker.get_current())
-            self._reset_word()
+            self._reset_word(f'раскладка сменилась посреди слова ({self._word_layout} → {layout})')
         self._word_layout = layout
 
-    def _reset_word(self) -> None:
+    def _reset_word(self, reason: str = '') -> None:
+        if self._word_tracker.get_current():
+            log.debug('слово %r сброшено: %s', self._word_tracker.get_current(), reason or 'сброс')
         self._word_tracker.on_reset()
         self._after_word = False
 
@@ -276,8 +280,11 @@ class KeyboardDaemon(QThread):
             return _STOP_KEY_CHARS[code]
         layout = self.current_layout
         if code in layout.keypad:
-            if code in _KEYPAD_NUMLOCK_KEYS and (self._shift or not self._numlock_on()):
-                return None
+            if code in _KEYPAD_NUMLOCK_KEYS:
+                numlock = self._numlock_on()
+                log.debug('цифровой блок %d: NumLock %s, Shift %s', code, numlock, self._shift)
+                if self._shift or not numlock:
+                    return None
             return layout.keypad[code]
         return layout.upper.get(code) if self._shift else layout.lower.get(code)
 
@@ -299,8 +306,10 @@ class KeyboardDaemon(QThread):
         self, word: str, stop_char: str = '', keys: list[tuple[int, bool]] | None = None,
     ) -> None:
         if self._current_window in self._excluded_windows:
+            log.debug('слово %r: окно %r исключено', word, self._current_window)
             return
         if any(app in self._current_window for app in self._config.excluded_apps):
+            log.debug('слово %r: приложение окна %r исключено', word, self._current_window)
             return
         current = self.current_layout
         alt = self.alt_layout
@@ -319,6 +328,7 @@ class KeyboardDaemon(QThread):
             except Exception:
                 log.exception('ошибка переключения слова %r', word)
                 return
+            log.info('переключено %r → %r, раскладка %s', word, remapped, alt.name)
             self.layout_changed.emit(alt.name)
 
     # --- Действия горячих клавиш ---
@@ -329,18 +339,26 @@ class KeyboardDaemon(QThread):
             current = self.current_layout
             alt = self.alt_layout
             remapped = self._remap(word, self._word_tracker.get_keys(), current, alt)
+            log.info('ручное переключение %r → %r (%s→%s)', word, remapped, current.name, alt.name)
             self._switcher.switch_word(word, current, alt, remapped=remapped)
             self._word_tracker.on_reset()
             self.layout_changed.emit(alt.name)
+        else:
+            log.info('ручное переключение: слова в буфере нет')
 
     def _on_switch_selection(self) -> None:
         current = self.current_layout
         alt = self.alt_layout
         if self._switcher.switch_selection(current, alt):
+            log.info('выделение переключено (%s→%s)', current.name, alt.name)
             self.layout_changed.emit(alt.name)
+        else:
+            log.info('переключение выделения: выделения нет')
 
     def _on_undo(self) -> None:
-        self._switcher.undo()
+        log.info('отмена переключения: %s', 'выполнена' if self._switcher.undo() else 'отменять нечего')
 
     def _on_toggle_window(self) -> None:
         self.toggle_current_window()
+        log.info('окно %r: автопереключение %s', self._current_window,
+                 'выключено' if self.is_window_excluded() else 'включено')

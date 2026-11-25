@@ -34,6 +34,9 @@ class Config:
     # Автозапуск
     autostart: bool = False
 
+    # Отладка: подробный лог в файл (содержит все нажатия)
+    debug_log: bool = False
+
 
 def load(path: Path = CONFIG_PATH) -> Config:
     """Загрузить конфиг из JSON-файла.

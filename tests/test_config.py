@@ -65,6 +65,9 @@ class TestConfigDefaults(unittest.TestCase):
     def test_autostart_disabled(self):
         self.assertFalse(self.config.autostart)
 
+    def test_debug_log_disabled(self):
+        self.assertFalse(self.config.debug_log)
+
     def test_excluded_words_are_independent_instances(self):
         # default_factory — каждый экземпляр получает свой список
         c1, c2 = Config(), Config()
