@@ -20,19 +20,29 @@ _BUS_VIRTUAL = 0x06
 
 
 def _find_keyboard() -> InputDevice | None:
-    """Вернуть первое физическое устройство с EV_KEY и буквенными клавишами."""
+    """Вернуть первое физическое устройство с EV_KEY и буквенными клавишами.
+
+    Фильтруем виртуальные устройства двумя способами:
+    - bustype == BUS_VIRTUAL (0x06) — устройства evdev/uinput
+    - пустой phys — виртуальные агрегаторы без физического адреса
+    """
+    candidates = []
     for path in list_devices():
         try:
             dev = InputDevice(path)
             if dev.info.bustype == _BUS_VIRTUAL:
                 continue
+            if not dev.phys:
+                continue
             caps = dev.capabilities()
             keys = caps.get(ecodes.EV_KEY, [])
             if ecodes.KEY_A in keys and ecodes.KEY_Z in keys:
-                return dev
+                candidates.append(dev)
         except Exception:
             continue
-    return None
+    for dev in candidates:
+        print(f'[qtpreved] kbd candidate: {dev.name!r}  phys={dev.phys}  bus={dev.info.bustype:#04x}')
+    return candidates[0] if candidates else None
 
 
 def main() -> None:
