@@ -47,11 +47,11 @@ class TestConfigDefaults(unittest.TestCase):
     def test_skip_uppercase(self):
         self.assertTrue(self.config.skip_uppercase)
 
-    def test_detection_threshold(self):
-        self.assertEqual(self.config.detection_threshold, 2.0)
+    def test_detection_margin(self):
+        self.assertEqual(self.config.detection_margin, 0.25)
 
-    def test_min_alt_score(self):
-        self.assertEqual(self.config.min_alt_score, 2.0)
+    def test_min_alt_logprob(self):
+        self.assertEqual(self.config.min_alt_logprob, -6.0)
 
     def test_undo_stack_depth(self):
         self.assertEqual(self.config.undo_stack_depth, 10)

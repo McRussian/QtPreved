@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -14,29 +15,21 @@ from unittest.mock import patch
 
 from qtpreved.config import Config
 from qtpreved.detector import (
-    EN_BIGRAMS, RU_BIGRAMS, Detector, _score_cached, load_bigrams, score_text, should_switch,
+    EN_MODEL, MODELS, RU_MODEL, Detector, TrigramModel, _score_cached, load_trigrams, score_text,
+    should_switch, strip_common_edges,
 )
 from qtpreved.kbd_map import Layout, load_default_layouts
 
 
 
-class TestLoadBigrams(unittest.TestCase):
+class TestLoadTrigrams(unittest.TestCase):
 
-    def test_en_bigrams_loaded(self):
-        self.assertGreater(len(EN_BIGRAMS), 0)
-
-    def test_ru_bigrams_loaded(self):
-        self.assertGreater(len(RU_BIGRAMS), 0)
-
-    def test_en_bigrams_contain_th(self):
-        self.assertIn('th', EN_BIGRAMS)
-
-    def test_ru_bigrams_contain_st(self):
-        self.assertIn('ст', RU_BIGRAMS)
+    def test_tables_cover_languages(self):
+        self.assertEqual(set(MODELS), {'en', 'ru'})
 
     def test_load_nonexistent_raises(self):
         with self.assertRaises(FileNotFoundError):
-            load_bigrams(Path('/nonexistent/bigrams.json'))
+            load_trigrams(Path('/nonexistent/trigrams.json'))
 
     def test_load_invalid_json_raises(self):
         import tempfile
@@ -45,89 +38,110 @@ class TestLoadBigrams(unittest.TestCase):
             tmp = Path(f.name)
         try:
             with self.assertRaises(json.JSONDecodeError):
-                load_bigrams(tmp)
+                load_trigrams(tmp)
         finally:
             tmp.unlink()
+
+
+class TestTrigramModel(unittest.TestCase):
+    """Модель на маленькой таблице: проверяются свойства, а не конкретные числа."""
+
+    def setUp(self):
+        # Корпус из одного слова 'ab' (×10): '  a', ' ab', 'ab '
+        self.model = TrigramModel({'  a': 10, ' ab': 10, 'ab ': 10})
+
+    def test_score_is_logprob(self):
+        self.assertLessEqual(self.model.score('ab'), 0.0)
+
+    def test_known_word_better_than_unknown(self):
+        self.assertGreater(self.model.score('ab'), self.model.score('ba'))
+
+    def test_unknown_char_heavily_penalized(self):
+        # 'z' нет в корпусе вообще, 'a' есть — хотя тройка 'aa' тоже неизвестна
+        self.assertLess(self.model.score('az'), self.model.score('aa'))
+
+    def test_empty_text_minus_infinity(self):
+        self.assertEqual(self.model.score(''), -math.inf)
+
+    def test_punctuation_only_minus_infinity(self):
+        self.assertEqual(self.model.score('?!'), -math.inf)
+
+    def test_case_insensitive(self):
+        self.assertEqual(self.model.score('AB'), self.model.score('ab'))
+
+    def test_logprob_counts_boundary(self):
+        # 'ab' → '  ab ': три предсказываемых символа (a, b, конец слова)
+        total, count = self.model.logprob('ab')
+        self.assertEqual(count, 3)
+        self.assertLess(total, 0.0)
+
+    def test_common_edge_punctuation_cheap(self):
+        self.assertGreater(self.model.score('ab,'), self.model.score('ab['))
+
+    def test_edge_punctuation_lowers_score_less_than_unknown_letter(self):
+        self.assertGreater(self.model.score('ab.'), self.model.score('abz'))
 
 
 class TestScoreCached(unittest.TestCase):
 
     def test_matches_score_text(self):
-        self.assertAlmostEqual(
-            _score_cached('hello', 'en'),
-            score_text('hello', EN_BIGRAMS),
-        )
+        self.assertAlmostEqual(_score_cached('hello', 'en'), score_text('hello', EN_MODEL))
 
-    def test_empty_string_returns_zero(self):
-        self.assertEqual(_score_cached('', 'en'), 0.0)
+    def test_empty_string_minus_infinity(self):
+        self.assertEqual(_score_cached('', 'en'), -math.inf)
 
-    def test_single_char_returns_zero(self):
-        self.assertEqual(_score_cached('a', 'en'), 0.0)
-
-    def test_unknown_layout_returns_zero(self):
-        self.assertEqual(_score_cached('hello', 'xx'), 0.0)
+    def test_unknown_layout_minus_infinity(self):
+        self.assertEqual(_score_cached('hello', 'xx'), -math.inf)
 
     def test_cache_hit_same_result(self):
-        result1 = _score_cached('привет', 'ru')
-        result2 = _score_cached('привет', 'ru')
-        self.assertEqual(result1, result2)
+        self.assertEqual(_score_cached('привет', 'ru'), _score_cached('привет', 'ru'))
 
-    def test_min_length_one_triggers_short_text_branch(self):
-        # min_length=1 пропускает слово 'a' в should_switch,
-        # _score_cached('а', ...) → len < 2 → 0.0 → не переключаем
+    def test_min_length_one_single_letter_not_switched(self):
         en, ru = load_default_layouts()
         self.assertFalse(should_switch('a', en, ru, min_length=1))
 
 
 class TestScoreText(unittest.TestCase):
 
-    def test_empty_string_returns_zero(self):
-        self.assertEqual(score_text('', EN_BIGRAMS), 0.0)
-
-    def test_single_char_returns_zero(self):
-        self.assertEqual(score_text('a', EN_BIGRAMS), 0.0)
-
-    def test_known_bigram_returns_positive(self):
-        # 'th' — самый частый английский биграмм (35.6)
-        self.assertGreater(score_text('th', EN_BIGRAMS), 0.0)
-
-    def test_unknown_bigrams_return_zero(self):
-        self.assertEqual(score_text('xzqw', {}), 0.0)
-
-    def test_single_bigram_returns_exact_frequency(self):
-        # Два символа = один биграмм, результат равен его частоте
-        self.assertAlmostEqual(score_text('th', EN_BIGRAMS), 35.6)
-
-    def test_longer_word_score_is_average(self):
-        # Три символа = два биграмма, результат — среднее
-        expected = (EN_BIGRAMS.get('th', 0) + EN_BIGRAMS.get('he', 0)) / 2
-        self.assertAlmostEqual(score_text('the', EN_BIGRAMS), expected)
-
     def test_uppercase_same_as_lowercase(self):
-        self.assertAlmostEqual(
-            score_text('привет', RU_BIGRAMS),
-            score_text('ПРИВЕТ', RU_BIGRAMS),
-        )
+        self.assertAlmostEqual(score_text('привет', RU_MODEL), score_text('ПРИВЕТ', RU_MODEL))
 
-    def test_russian_text_scores_high_on_ru_bigrams(self):
-        self.assertGreater(score_text('привет', RU_BIGRAMS), 5.0)
+    def test_russian_word_prefers_russian_model(self):
+        self.assertGreater(score_text('привет', RU_MODEL), score_text('привет', EN_MODEL) + 3)
 
-    def test_russian_text_scores_low_on_en_bigrams(self):
-        self.assertLess(score_text('привет', EN_BIGRAMS), 2.0)
+    def test_english_word_prefers_english_model(self):
+        self.assertGreater(score_text('hello', EN_MODEL), score_text('hello', RU_MODEL) + 3)
 
-    def test_english_text_scores_high_on_en_bigrams(self):
-        self.assertGreater(score_text('hello', EN_BIGRAMS), 5.0)
+    def test_wrong_layout_text_scores_low(self):
+        self.assertLess(score_text('ghbdtn', EN_MODEL), score_text('привет', RU_MODEL))
 
-    def test_english_text_scores_low_on_ru_bigrams(self):
-        self.assertLess(score_text('hello', RU_BIGRAMS), 2.0)
-
-    @given(st.text(), st.dictionaries(st.text(min_size=2, max_size=2), st.floats(min_value=0.0, max_value=100.0)))
-    def test_score_always_nonnegative(self, text, bigrams):
-        self.assertGreaterEqual(score_text(text, bigrams), 0.0)
+    def test_apostrophe_inside_english_word(self):
+        self.assertGreater(score_text("don't", EN_MODEL), score_text('вщтэе', RU_MODEL))
 
     @given(st.text())
-    def test_score_empty_bigrams_always_zero(self, text):
-        self.assertEqual(score_text(text, {}), 0.0)
+    def test_score_never_positive(self, text):
+        self.assertLessEqual(score_text(text, EN_MODEL), 0.0)
+
+    @given(st.text(alphabet='абвгдежзийклмнопрстуфхцчшщъыьэюя', min_size=1, max_size=20))
+    def test_score_finite_for_letters(self, text):
+        self.assertTrue(math.isfinite(score_text(text, RU_MODEL)))
+
+
+class TestStripCommonEdges(unittest.TestCase):
+
+    def test_shared_punctuation_removed(self):
+        # '(' и '?'/',' — не буквы в обоих вариантах
+        self.assertEqual(strip_common_edges('(ghbdtn?', '(привет,'), ('ghbdtn', 'привет'))
+
+    def test_letter_in_other_variant_kept(self):
+        # '[' и ',' — буквы х и б в русском варианте
+        self.assertEqual(strip_common_edges('[kt,', 'хлеб'), ('[kt,', 'хлеб'))
+
+    def test_digits_removed(self):
+        self.assertEqual(strip_common_edges('hf,jnf2', 'работа2'), ('hf,jnf', 'работа'))
+
+    def test_no_letters(self):
+        self.assertEqual(strip_common_edges('123', '123'), ('', ''))
 
 
 class TestShouldSwitch(unittest.TestCase):
@@ -183,13 +197,31 @@ class TestShouldSwitch(unittest.TestCase):
 
     # --- Пороги ---
 
-    def test_threshold_blocks_ambiguous_word(self):
+    def test_margin_blocks_ambiguous_word(self):
         # Слово 'store': хорошо читается по-английски, при ремапе даёт 'ыещку' (низкий RU-счёт)
-        # Высокий threshold не меняет поведения для очевидно правильных слов
-        self.assertFalse(should_switch('store', self.en, self.ru, threshold=2.0))
+        self.assertFalse(should_switch('store', self.en, self.ru, margin=0.25))
 
-    def test_high_min_alt_score_prevents_switch(self):
-        self.assertFalse(should_switch('ghbdtn', self.en, self.ru, min_alt_score=999.0))
+    def test_huge_margin_prevents_switch(self):
+        self.assertFalse(should_switch('ghbdtn', self.en, self.ru, margin=999.0))
+
+    def test_high_min_alt_logprob_prevents_switch(self):
+        self.assertFalse(should_switch('ghbdtn', self.en, self.ru, min_alt_logprob=0.0))
+
+    def test_wrong_layout_ru_to_en(self):
+        self.assertTrue(should_switch('руддщ', self.ru, self.en))
+
+    def test_letters_on_punctuation_keys(self):
+        # 'хлеб' и 'ещё', набранные в английской раскладке
+        self.assertTrue(should_switch('[kt,', self.en, self.ru))
+        self.assertTrue(should_switch('to`', self.en, self.ru))
+
+    def test_correct_words_with_punctuation_keys_not_switched(self):
+        self.assertFalse(should_switch('ещё', self.ru, self.en))
+        self.assertFalse(should_switch('хлеб', self.ru, self.en))
+        self.assertFalse(should_switch('Hello,', self.en, self.ru))
+
+    def test_previous_false_positive_kupil(self):
+        self.assertFalse(should_switch('Купил', self.ru, self.en))
 
     # --- Неизвестная раскладка (нет биграмм) ---
 
@@ -259,17 +291,16 @@ class TestDetectorClass(unittest.TestCase):
         d = self._make(skip_uppercase=False)
         self.assertTrue(d.should_switch('GHBDTN', self.en, self.ru))
 
-    def test_high_min_alt_score_prevents_switch(self):
-        d = self._make(min_alt_score=999.0)
+    def test_high_min_alt_logprob_prevents_switch(self):
+        d = self._make(min_alt_logprob=0.0)
         self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
 
-    def test_detection_threshold_passed_to_function(self):
-        # Нельзя проверить через 'ghbdtn': current_score=0, 0*999=0 → threshold не влияет.
+    def test_detection_margin_passed_to_function(self):
         # Проверяем напрямую, что параметр передаётся в модульную функцию.
         with patch('qtpreved.detector.should_switch', return_value=False) as mock_fn:
-            d = self._make(detection_threshold=7.5)
+            d = self._make(detection_margin=7.5)
             d.should_switch('ghbdtn', self.en, self.ru)
-            self.assertEqual(mock_fn.call_args[1]['threshold'], 7.5)
+            self.assertEqual(mock_fn.call_args[1]['margin'], 7.5)
 
     # --- Config обновляется динамически ---
 
@@ -297,6 +328,11 @@ class TestShouldSwitchRemapped(unittest.TestCase):
 
     def test_punctuation_around_word_ignored(self):
         self.assertTrue(should_switch('(ghbdtn?', self.en, self.ru))
+
+    def test_no_letters_in_current_layout_not_switched(self):
+        # '...' в английской раскладке — 'ююю' в русской
+        en, ru = load_default_layouts()
+        self.assertFalse(should_switch('...', en, ru))
 
     def test_only_punctuation_not_switched(self):
         self.assertFalse(should_switch('?!...', self.en, self.ru))

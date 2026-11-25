@@ -21,8 +21,8 @@ class Config:
     auto_switch: bool = True
     min_word_length: int = 3
     skip_uppercase: bool = True
-    detection_threshold: float = 2.0
-    min_alt_score: float = 2.0
+    detection_margin: float = 0.25
+    min_alt_logprob: float = -6.0
 
     # Undo
     undo_stack_depth: int = 10

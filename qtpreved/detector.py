@@ -1,46 +1,106 @@
 from __future__ import annotations
 
 import json
+import math
+from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
 from qtpreved.config import Config
 from qtpreved.kbd_map import Layout
 
-BIGRAMS_DIR = Path(__file__).parent.parent / 'resources' / 'bigrams'
+TRIGRAMS_DIR = Path(__file__).parent.parent / 'resources' / 'trigrams'
+
+# Знаки, обычные на краю слова, и их логарифмическая «цена».
+# Редкие на краю символы ('[', '`', '@', ...) стоят дорого: чаще всего это буквы
+# другой раскладки ('[kt,' — 'хлеб', 'to`' — 'ещё'), а не настоящая пунктуация.
+EDGE_PUNCTUATION = frozenset('.,!?:;()"\'-')
+EDGE_PUNCTUATION_LOGPROB = math.log(0.05)
+EDGE_OTHER_LOGPROB = -8.0
 
 
-def load_bigrams(path: Path) -> dict[str, float]:
-    """Загрузить таблицу биграмм из JSON-файла.
+def load_trigrams(path: Path) -> dict[str, int]:
+    """Загрузить таблицу триграмм (тройка символов → число вхождений) из JSON-файла.
 
-    Raises FileNotFoundError, json.JSONDecodeError.
+    Таблица строится tools/build_trigrams.py. Raises FileNotFoundError, json.JSONDecodeError.
     """
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-# Загружаются при старте модуля — по аналогии с раскладками
-EN_BIGRAMS: dict[str, float] = load_bigrams(BIGRAMS_DIR / 'en.json')
-RU_BIGRAMS: dict[str, float] = load_bigrams(BIGRAMS_DIR / 'ru.json')
+class TrigramModel:
+    """Символьная языковая модель на триграммах с интерполяцией.
 
-# Маппинг имени раскладки на таблицу биграмм
-BIGRAMS: dict[str, dict[str, float]] = {
-    'en': EN_BIGRAMS,
-    'ru': RU_BIGRAMS,
+    Вероятность символа c после ab — взвешенная сумма оценок по триграмме abc,
+    биграмме bc и частоте самого c (со сглаживанием). Поэтому неизвестная тройка
+    не обнуляет оценку слова, а только снижает её; символ вне алфавита языка
+    (например ';' в английском варианте русского 'уже') снижает сильнее всего.
+
+    Слово дополняется границами как при построении таблицы: '  слово '.
+    """
+
+    WEIGHTS = (0.6, 0.3, 0.1)
+
+    def __init__(self, trigrams: dict[str, int]) -> None:
+        self._c3 = trigrams
+        self._c2: Counter[str] = Counter()
+        self._c1: Counter[str] = Counter()
+        for tri, n in trigrams.items():
+            self._c2[tri[:2]] += n
+            self._c1[tri[0]] += n
+        self._total = sum(self._c1.values())
+        self._vocab = len(self._c1)
+
+    def _char_prob(self, a: str, b: str, c: str) -> float:
+        w3, w2, w1 = self.WEIGHTS
+        ab = self._c2.get(a + b, 0)
+        p3 = self._c3.get(a + b + c, 0) / ab if ab else 0.0
+        b_count = self._c1.get(b, 0)
+        p2 = self._c2.get(b + c, 0) / b_count if b_count else 0.0
+        p1 = (self._c1.get(c, 0) + 1) / (self._total + self._vocab)
+        return w3 * p3 + w2 * p2 + w1 * p1
+
+    def logprob(self, text: str) -> tuple[float, int]:
+        """Сумма логарифмов вероятностей символов слова и число слагаемых (включая границу)."""
+        padded = f'  {text.lower()} '
+        logs = [math.log(self._char_prob(*padded[i:i + 3])) for i in range(len(padded) - 2)]
+        return sum(logs), len(logs)
+
+    def score(self, text: str) -> float:
+        """Средний логарифм вероятности символа (≤ 0, чем ближе к 0 — тем правдоподобнее).
+
+        Знаки препинания по краям оцениваются отдельно от слова: обычные
+        (EDGE_PUNCTUATION) дёшево, прочие — дорого. Текст без букв — минус бесконечность.
+        """
+        core = strip_non_letters(text)
+        if not core:
+            return -math.inf
+        start = text.index(core)
+        edges = text[:start] + text[start + len(core):]
+        total, count = self.logprob(core)
+        for ch in edges:
+            total += EDGE_PUNCTUATION_LOGPROB if ch in EDGE_PUNCTUATION else EDGE_OTHER_LOGPROB
+        return total / (count + len(edges))
+
+
+# Загружаются при старте модуля — по аналогии с раскладками
+EN_MODEL = TrigramModel(load_trigrams(TRIGRAMS_DIR / 'en.json'))
+RU_MODEL = TrigramModel(load_trigrams(TRIGRAMS_DIR / 'ru.json'))
+
+# Маппинг имени раскладки на языковую модель
+MODELS: dict[str, TrigramModel] = {
+    'en': EN_MODEL,
+    'ru': RU_MODEL,
 }
 
 
-def score_text(text: str, bigrams: dict[str, float]) -> float:
-    """Оценить текст по таблице биграмм.
+def score_text(text: str, model: TrigramModel) -> float:
+    """Оценить текст языковой моделью.
 
-    Чистая функция: принимает произвольный словарь биграмм.
+    Чистая функция: принимает произвольную модель.
     Используется в тестах и для внешних вызовов.
     Текст приводится к нижнему регистру перед оценкой.
     """
-    text = text.lower()
-    if len(text) < 2:
-        return 0.0
-    total = sum(bigrams.get(text[i:i + 2], 0.0) for i in range(len(text) - 1))
-    return total / (len(text) - 1)
+    return model.score(text)
 
 
 def strip_non_letters(text: str) -> str:
@@ -52,19 +112,31 @@ def strip_non_letters(text: str) -> str:
     return text[start:end]
 
 
+def strip_common_edges(text: str, remapped: str) -> tuple[str, str]:
+    """Отрезать по краям символы, которые не буквы в обоих вариантах слова.
+
+    '[kt,' / 'хлеб' → без изменений: '[' и ',' — буквы в русском варианте.
+    '(ghbdtn?' / '(привет,' → 'ghbdtn?' / 'привет,' — '(' не буква ни там, ни там.
+    Варианты одной длины (посимвольный пересчёт), обрезаются по одним позициям.
+    """
+    start, end = 0, len(text)
+    while start < end and not text[start].isalpha() and not remapped[start].isalpha():
+        start += 1
+    while end > start and not text[end - 1].isalpha() and not remapped[end - 1].isalpha():
+        end -= 1
+    return text[start:end], remapped[start:end]
+
+
 @lru_cache(maxsize=2000)
 def _score_cached(text_lower: str, layout_name: str) -> float:
     """Кешированная оценка текста по имени раскладки.
 
     Принимает уже приведённый к нижнему регистру текст — ключ кеша должен
     быть стабильным. При добавлении новых раскладок кеш работает автоматически
-    через BIGRAMS без изменений кода.
+    через MODELS без изменений кода. Раскладка без модели — минус бесконечность.
     """
-    bigrams = BIGRAMS.get(layout_name, {})
-    if len(text_lower) < 2:
-        return 0.0
-    total = sum(bigrams.get(text_lower[i:i + 2], 0.0) for i in range(len(text_lower) - 1))
-    return total / (len(text_lower) - 1)
+    model = MODELS.get(layout_name)
+    return model.score(text_lower) if model else -math.inf
 
 
 def should_switch(
@@ -73,26 +145,25 @@ def should_switch(
     alt_layout: Layout,
     min_length: int = 3,
     skip_uppercase: bool = True,
-    threshold: float = 2.0,
-    min_alt_score: float = 5.0,
+    margin: float = 0.25,
+    min_alt_logprob: float = -6.0,
     remapped: str | None = None,
 ) -> bool:
     """Определить, набрано ли слово не в той раскладке.
 
-    Ремапит слово в альтернативную раскладку и сравнивает биграммные оценки.
-    Переключение рекомендуется, если альтернативный вариант значимо лучше
-    (в threshold раз) и превышает минимальный порог min_alt_score.
+    Ремапит слово в альтернативную раскладку и сравнивает оценки языковых моделей.
+    Переключение рекомендуется, если альтернативный вариант правдоподобнее текущего
+    больше чем на margin и сам достаточно правдоподобен (оценка выше min_alt_logprob).
 
     Слова короче min_length и ALL CAPS (при skip_uppercase=True) пропускаются.
     remapped — слово в альтернативной раскладке, если уже собрано по нажатиям.
     Оценка кешируется по (слово, имя_раскладки) — масштабируется на любое
     количество раскладок без повторных вычислений.
     """
-    current_core = strip_non_letters(word)
     if remapped is None:
         remapped = current_layout.remap_to(word, alt_layout)
-    alt_core = strip_non_letters(remapped)
-    if max(len(current_core), len(alt_core)) < min_length:
+    current_core, alt_core = strip_common_edges(word, remapped)
+    if len(current_core) < min_length or not any(ch.isalpha() for ch in current_core):
         return False
     if skip_uppercase and alt_core.isupper():
         return False
@@ -100,7 +171,7 @@ def should_switch(
     current_score = _score_cached(current_core.lower(), current_layout.name)
     alt_score = _score_cached(alt_core.lower(), alt_layout.name)
 
-    return alt_score > current_score * threshold and alt_score > min_alt_score
+    return alt_score - current_score > margin and alt_score > min_alt_logprob
 
 
 class Detector:
@@ -127,7 +198,7 @@ class Detector:
             word, current_layout, alt_layout,
             min_length=self._config.min_word_length,
             skip_uppercase=self._config.skip_uppercase,
-            threshold=self._config.detection_threshold,
-            min_alt_score=self._config.min_alt_score,
+            margin=self._config.detection_margin,
+            min_alt_logprob=self._config.min_alt_logprob,
             remapped=remapped,
         )
