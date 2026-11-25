@@ -92,6 +92,10 @@ class Switcher:
         Если передан, удаляется как часть слова и восстанавливается после него.
         remapped — слово в альтернативной раскладке, если уже собрано по нажатиям;
         иначе вычисляется через remap_to.
+
+        Порядок: стереть слово → переключить раскладку → набрать исправленное слово
+        нажатиями клавиш уже в новой раскладке. Буфер обмена не используется: вставка
+        через него асинхронна и не работает в терминалах (там Ctrl+V — не «вставить»).
         """
         if remapped is None:
             remapped = current_layout.remap_to(word, alt_layout)
@@ -100,10 +104,8 @@ class Switcher:
 
         # +1 чтобы удалить стоп-символ, уже находящийся перед курсором
         self._injector.inject_backspaces(len(word) + bool(stop_char))
-        # Стоп-символ вставляется вместе со словом: вставка из буфера асинхронна,
-        # и отдельное нажатие пробела приложение может обработать раньше вставки
-        self._injector.paste_text(remapped + stop_char)
         self._layout_manager.set_layout(new_idx)
+        self._type_text(remapped + stop_char, alt_layout)
         log.debug('слово %r → %r, стоп %r, раскладка %d → %d', word, remapped, stop_char, original_idx, new_idx)
 
         self._undo_stack.append(_UndoEntry(
@@ -153,12 +155,23 @@ class Switcher:
 
         entry = self._undo_stack.pop()
         self._injector.inject_backspaces(entry.new_text_len + bool(entry.stop_char))
-        self._injector.paste_text(entry.original_text + entry.stop_char)
         self._layout_manager.set_layout(entry.original_layout_idx)
+        self._type_text(entry.original_text + entry.stop_char, entry.original_layout)
         log.debug('отмена: стёрто %d, возвращено %r, раскладка → %d',
                   entry.new_text_len + bool(entry.stop_char), entry.original_text + entry.stop_char,
                   entry.original_layout_idx)
         return True
+
+    def _type_text(self, text: str, layout: Layout) -> None:
+        """Набрать текст клавишами в уже включённой раскладке layout.
+
+        Если какого-то символа в раскладке нет — вставить через буфер обмена.
+        """
+        if layout.can_type(text):
+            self._injector.inject_text(text, layout)
+        else:
+            log.debug('%r не набирается клавишами раскладки %s — вставка через буфер', text, layout.name)
+            self._injector.paste_text(text)
 
     def on_typing(self) -> None:
         """Сбросить undo-стек при вводе нового символа после переключения."""

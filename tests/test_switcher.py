@@ -77,15 +77,17 @@ class TestSwitchWord(unittest.TestCase):
         self.assertEqual(self.injector.calls[0], ('inject_backspaces', 6))
 
     def test_injects_remapped_text(self):
+        # Слово перенабирается клавишами в новой раскладке
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
-        kind, text = self.injector.calls[1]
-        self.assertEqual(kind, 'paste_text')
+        kind, text, layout = self.injector.calls[1]
+        self.assertEqual(kind, 'inject_text')
         self.assertEqual(text, 'привет')
+        self.assertIs(layout, self.ru)
 
     def test_backspaces_before_text_injection(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
         self.assertEqual(self.injector.calls[0][0], 'inject_backspaces')
-        self.assertEqual(self.injector.calls[1][0], 'paste_text')
+        self.assertEqual(self.injector.calls[1][0], 'inject_text')
 
     def test_sets_alt_layout(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru)
@@ -95,7 +97,7 @@ class TestSwitchWord(unittest.TestCase):
         lm = MockLayoutManager(current=1)
         s = Switcher(self.injector, lm)
         s.switch_word('привет', self.ru, self.en)
-        self.assertEqual(self.injector.calls[1], ('paste_text', 'ghbdtn'))
+        self.assertEqual(self.injector.calls[1][:2], ('inject_text', 'ghbdtn'))
         self.assertIn(('set_layout', 0), lm.calls)
 
     def test_pushes_undo_entry(self):
@@ -184,7 +186,7 @@ class TestUndo(unittest.TestCase):
         s.switch_word('ghbdtn', self.en, self.ru)
         injector.calls.clear()
         s.undo()
-        self.assertEqual(injector.calls[1], ('paste_text', 'ghbdtn'))
+        self.assertEqual(injector.calls[1][:2], ('inject_text', 'ghbdtn'))
 
     def test_undo_restores_original_layout(self):
         s, _, lm = make_switcher(current=0)
@@ -228,7 +230,7 @@ class TestUndo(unittest.TestCase):
         result = s.undo()
         self.assertTrue(result)
         self.assertEqual(injector.calls[0], ('inject_backspaces', 6))
-        self.assertEqual(injector.calls[1], ('paste_text', 'ghbdtn'))
+        self.assertEqual(injector.calls[1][:2], ('inject_text', 'ghbdtn'))
         self.assertEqual(lm.calls, [('set_layout', 0)])
 
 
@@ -367,9 +369,9 @@ class TestSwitchWordRemapped(unittest.TestCase):
         self.en, self.ru = load_default_layouts()
         self.switcher, self.injector, self.lm = make_switcher()
 
-    def test_remapped_pasted(self):
+    def test_remapped_typed(self):
         self.switcher.switch_word('ghbdtn.', self.en, self.ru, remapped='привет,')
-        self.assertIn(('paste_text', 'привет,'), self.injector.calls)
+        self.assertIn(('inject_text', 'привет,', self.ru), self.injector.calls)
 
     def test_backspaces_by_original_length(self):
         self.switcher.switch_word('ghbdtn.', self.en, self.ru, ' ', remapped='привет,')
@@ -380,50 +382,56 @@ class TestSwitchWordRemapped(unittest.TestCase):
         self.injector.calls.clear()
         self.switcher.undo()
         self.assertEqual(self.injector.calls[0], ('inject_backspaces', 3))
-        self.assertIn(('paste_text', 'ab'), self.injector.calls)
+        self.assertIn(('inject_text', 'ab', self.en), self.injector.calls)
 
     def test_none_falls_back_to_remap_to(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru, remapped=None)
-        self.assertIn(('paste_text', 'привет'), self.injector.calls)
+        self.assertIn(('inject_text', 'привет', self.ru), self.injector.calls)
 
 
-class TestStopCharPastedWithWord(unittest.TestCase):
-    """Стоп-символ вставляется одной вставкой со словом, а не отдельным нажатием.
+class TestRetypeWithKeys(unittest.TestCase):
+    """Слово перенабирается клавишами: стереть → переключить раскладку → набрать заново.
 
-    Вставка из буфера в Wayland асинхронна: отдельное нажатие пробела приложение
-    успевало обработать раньше вставки, и пробел оказывался перед словом.
+    Через буфер обмена было ненадёжно: вставка асинхронна (пробел вставал перед словом),
+    картинка в буфере ломала сохранение, а в терминалах Ctrl+V — не «вставить».
     """
 
     def setUp(self):
         self.en, self.ru = load_default_layouts()
         self.switcher, self.injector, self.lm = make_switcher()
-        self.stop_chars = []
-        self.injector.inject_stop_char = self.stop_chars.append
+        self.events = self.injector.calls
+        # Общий журнал: смена раскладки тоже пишется в injector.calls — проверяем порядок
+        self.lm.set_layout = lambda idx: self.events.append(('set_layout', idx))
 
-    def test_space_pasted_with_word(self):
+    def test_order_backspace_layout_type(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
-        self.assertIn(('paste_text', 'привет '), self.injector.calls)
+        self.assertEqual([e[0] for e in self.events], ['inject_backspaces', 'set_layout', 'inject_text'])
 
-    def test_single_paste(self):
+    def test_word_and_space_typed_together(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
-        pastes = [c for c in self.injector.calls if c[0] == 'paste_text']
-        self.assertEqual(len(pastes), 1)
+        self.assertIn(('inject_text', 'привет ', self.ru), self.events)
 
-    def test_no_separate_stop_char_press(self):
+    def test_no_clipboard_used(self):
         self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
-        self.assertEqual(self.stop_chars, [])
+        self.assertFalse(any(e[0] == 'paste_text' for e in self.events))
 
     def test_without_stop_char_word_only(self):
         self.switcher.switch_word('ghbdtn?', self.en, self.ru, remapped='привет,')
-        self.assertIn(('paste_text', 'привет,'), self.injector.calls)
+        self.assertIn(('inject_text', 'привет,', self.ru), self.events)
 
-    def test_undo_pastes_original_with_stop_char(self):
+    def test_undo_order_and_text(self):
         self.switcher.switch_word('руддщб', self.ru, self.en, ' ', remapped='hello,')
-        self.injector.calls.clear()
+        self.events.clear()
         self.switcher.undo()
-        self.assertEqual(self.injector.calls[0], ('inject_backspaces', 7))
-        self.assertIn(('paste_text', 'руддщб '), self.injector.calls)
-        self.assertEqual(self.stop_chars, [])
+        self.assertEqual([e[0] for e in self.events], ['inject_backspaces', 'set_layout', 'inject_text'])
+        self.assertEqual(self.events[0], ('inject_backspaces', 7))
+        self.assertEqual(self.events[2], ('inject_text', 'руддщб ', self.ru))
+
+    def test_untypeable_text_falls_back_to_clipboard(self):
+        # Латиницу в русской раскладке клавишами не набрать — остаётся вставка через буфер
+        self.switcher.switch_word('ab', self.en, self.ru, remapped='xyz')
+        self.assertIn(('paste_text', 'xyz'), self.events)
+        self.assertFalse(any(e[0] == 'inject_text' for e in self.events))
 
 if __name__ == '__main__':
     unittest.main()

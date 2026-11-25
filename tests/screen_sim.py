@@ -19,7 +19,7 @@ from evdev import ecodes
 from qtpreved.config import Config
 from qtpreved.daemon import KeyboardDaemon
 from qtpreved.injector import _STOP_CHAR_KEYS
-from qtpreved.kbd_map import load_default_layouts
+from qtpreved.kbd_map import Layout, load_default_layouts
 from qtpreved.switcher import Injector, LayoutManager
 
 _KEY_NAMES = (
@@ -27,12 +27,12 @@ _KEY_NAMES = (
     + [f'KEY_{c}' for c in 'ASDFGHJKL'] + ['KEY_SEMICOLON', 'KEY_APOSTROPHE']
     + [f'KEY_{c}' for c in 'ZXCVBNM'] + ['KEY_COMMA', 'KEY_DOT', 'KEY_SLASH', 'KEY_GRAVE']
     + [f'KEY_{d}' for d in '1234567890'] + ['KEY_MINUS', 'KEY_EQUAL', 'KEY_SPACE']
-    + ['KEY_ENTER', 'KEY_TAB']
+    + ['KEY_ENTER', 'KEY_TAB', 'KEY_BACKSLASH']
 )
-_US_LOWER = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./`1234567890-= \n\t'
-_US_UPPER = 'QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>?~!@#$%^&*()_+ \n\t'
-_RU_LOWER = 'йцукенгшщзхъфывапролджэячсмитьбю.ё1234567890-= \n\t'
-_RU_UPPER = 'ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,Ё!"№;%:?*()_+ \n\t'
+_US_LOWER = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./`1234567890-= \n\t\\'
+_US_UPPER = 'QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>?~!@#$%^&*()_+ \n\t|'
+_RU_LOWER = 'йцукенгшщзхъфывапролджэячсмитьбю.ё1234567890-= \n\t\\'
+_RU_UPPER = 'ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,Ё!"№;%:?*()_+ \n\t/'
 
 XKB_NAMES = ['us', 'ru']
 
@@ -107,8 +107,12 @@ class ScreenInjector(Injector):
         for _ in range(n):
             self._screen.press(ecodes.KEY_BACKSPACE, False)
 
-    def inject_text(self, text: str, layout: object) -> None:
-        self._screen.text += text
+    def inject_text(self, text: str, layout: Layout) -> None:
+        # Как UinputInjector: клавиши по таблице раскладки layout, а печатает их экран
+        # в своей текущей раскладке — если раскладку не переключили до набора, выйдет мусор
+        for ch in text:
+            if ch in layout._char_to_key:
+                self._screen.press(*layout._char_to_key[ch])
 
     def get_selection(self) -> str | None:
         return None

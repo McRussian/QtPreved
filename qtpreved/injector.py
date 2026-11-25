@@ -80,6 +80,7 @@ class UinputInjector(Injector):
 
     def inject_text(self, text: str, layout: Layout) -> None:
         """Инжектировать текст посимвольно. Символы вне раскладки пропускаются."""
+        log.debug('набор клавишами %r (раскладка %s)', text, layout.name)
         char_map = layout._char_to_key
         for ch in text:
             if ch not in char_map:

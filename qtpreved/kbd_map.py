@@ -59,6 +59,10 @@ class Layout:
                 result.append(ch)
         return ''.join(result)
 
+    def can_type(self, text: str) -> bool:
+        """Можно ли набрать текст клавишами этой раскладки (у каждого символа есть клавиша)."""
+        return all(ch in self._char_to_key for ch in text)
+
     def render(self, keys: list[tuple[int, bool]]) -> str:
         """Собрать текст из последовательности нажатий (keycode, shift) в этой раскладке.
 

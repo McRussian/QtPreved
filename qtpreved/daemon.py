@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from evdev import ecodes
@@ -37,6 +39,21 @@ _IN_WORD_MARKS = frozenset('-_')
 _SHIFT_KEYS = frozenset({ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT})
 _CTRL_KEYS = frozenset({ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL})
 _ALT_KEYS = frozenset({ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT})
+
+
+@dataclass
+class _PendingAction:
+    """Действие, отложенное до отпускания клавиши-триггера и модификаторов.
+
+    Демон сам нажимает клавиши, а модификаторы у физической и виртуальной клавиатуры
+    общие: пока зажат Shift (после '?' или в Shift+Pause), перенабранные буквы стали бы
+    заглавными, а зажатая клавиша-триггер могла бы «съесть» такое же нажатие от демона.
+    """
+
+    action: Callable[[], None]
+    trigger: int
+    description: str
+    released: bool = False
 
 
 def _parse_hotkey(hotkey_str: str) -> tuple[int | None, bool, bool, bool]:
@@ -83,6 +100,7 @@ class KeyboardDaemon(QThread):
 
         self._word_tracker = WordTracker()
         self._after_word = False
+        self._pending: _PendingAction | None = None
         self._word_layout = ''
         self._detector = Detector(config)
         self._switcher = Switcher(injector, layout_manager, config.undo_stack_depth)
@@ -172,18 +190,30 @@ class KeyboardDaemon(QThread):
 
         if code in _SHIFT_KEYS:
             self._shift = value != 0
+            self._run_pending_if_ready()
             return
         if code in _CTRL_KEYS:
             self._ctrl = value != 0
+            self._run_pending_if_ready()
             return
         if code in _ALT_KEYS:
             self._alt = value != 0
+            self._run_pending_if_ready()
             return
 
+        if value == 0:
+            if self._pending is not None and code == self._pending.trigger:
+                self._pending.released = True
+                self._run_pending_if_ready()
+            return
         if value == 2:
             log.debug('автоповтор клавиши %d — не учитывается', code)
-        if value != 1:  # только key_down
             return
+
+        if self._pending is not None:
+            log.info('%s отменено: клавиша %d нажата раньше, чем отпущена %d',
+                     self._pending.description, code, self._pending.trigger)
+            self._pending = None
 
         # Проверить горячие клавиши
         for keycode, req_ctrl, req_shift, req_alt, action in self._hotkeys:
@@ -192,7 +222,10 @@ class KeyboardDaemon(QThread):
                     and self._shift == req_shift
                     and self._alt == req_alt):
                 log.info('горячая клавиша %d: %s', code, action.__name__)
-                action()
+                if action == self._on_toggle_window:
+                    action()  # ничего не набирает — можно сразу
+                else:
+                    self._defer(action, code, f'горячая клавиша {action.__name__}')
                 return
 
         self._handle_typing(code)
@@ -225,14 +258,14 @@ class KeyboardDaemon(QThread):
             keys = self._word_tracker.get_keys()
             word = self._word_tracker.on_stop_char(ch)
             if word and self._config.auto_switch:
-                self._auto_switch(word, ch, keys)
+                self._defer_auto_switch(word, ch, keys, code)
             self._after_word = self._after_word or bool(word)
         else:
             self._check_layout_unchanged()
             self._word_tracker.add_char(ch, (code, self._shift))
             self._switcher.on_typing()
             if self._ends_word(code):
-                self._finish_word_on_mark()
+                self._finish_word_on_mark(code)
 
     def _ends_word(self, code: int) -> bool:
         """Знак, который завершает слово: не буква, не цифра и не дефис ни в одной раскладке.
@@ -243,7 +276,7 @@ class KeyboardDaemon(QThread):
         chars = self._en.render(key) + self._ru.render(key)
         return bool(chars) and not any(c.isalpha() or c.isdigit() or c in _IN_WORD_MARKS for c in chars)
 
-    def _finish_word_on_mark(self) -> None:
+    def _finish_word_on_mark(self, code: int) -> None:
         """Слово со знаком на конце ('ghbdtn?') переключается сразу, без пробела.
 
         Знак до первой буквы ('(' или '"' перед словом) слово не завершает, а входит в него.
@@ -255,8 +288,29 @@ class KeyboardDaemon(QThread):
             return
         self._word_tracker.on_reset()
         if self._config.auto_switch:
-            self._auto_switch(word, '', keys)
+            self._defer_auto_switch(word, '', keys, code)
         self._after_word = True
+
+    def _defer(self, action: Callable[[], None], trigger: int, description: str) -> None:
+        self._pending = _PendingAction(action, trigger, description)
+        log.debug('%s: ждём отпускания клавиши %d', description, trigger)
+
+    def _defer_auto_switch(
+        self, word: str, stop_char: str, keys: list[tuple[int, bool]] | None, trigger: int,
+    ) -> None:
+        # Контекст «после слова» фиксируется сейчас: к моменту выполнения он уже обновится
+        after_word = self._after_word
+        self._defer(
+            lambda: self._auto_switch(word, stop_char, keys, after_word),
+            trigger, f'переключение слова {word!r}',
+        )
+
+    def _run_pending_if_ready(self) -> None:
+        pending = self._pending
+        if pending is None or not pending.released or self._shift or self._ctrl or self._alt:
+            return
+        self._pending = None
+        pending.action()
 
     def _check_layout_unchanged(self) -> None:
         """Сбросить слово, если раскладку сменили посреди него (вручную, мимо демона).
@@ -304,6 +358,7 @@ class KeyboardDaemon(QThread):
 
     def _auto_switch(
         self, word: str, stop_char: str = '', keys: list[tuple[int, bool]] | None = None,
+        after_word: bool | None = None,
     ) -> None:
         if self._current_window in self._excluded_windows:
             log.debug('слово %r: окно %r исключено', word, self._current_window)
@@ -318,7 +373,7 @@ class KeyboardDaemon(QThread):
         log.debug('слово %r → %r (%s→%s), стоп %r: %s', word, remapped, current.name, alt.name,
                   stop_char, 'переключаем' if switch else 'нет')
         if switch:
-            if self._after_word:
+            if self._after_word if after_word is None else after_word:
                 prefix = 0
                 while prefix < len(word) and not word[prefix].isalpha() and not remapped[prefix].isalpha():
                     prefix += 1

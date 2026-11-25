@@ -78,6 +78,12 @@ def up(code: int) -> FakeEvent:
     return FakeEvent(code, 0)
 
 
+def press(daemon: KeyboardDaemon, code: int) -> None:
+    """Полное нажатие: key_down + key_up. Переключение выполняется при отпускании."""
+    daemon._process_event(dn(code))
+    daemon._process_event(up(code))
+
+
 # ---------------------------------------------------------------------------
 # QCoreApplication (требуется для QThread/сигналов)
 # ---------------------------------------------------------------------------
@@ -162,7 +168,7 @@ class TestAutoSwitch(unittest.TestCase):
 
     def _type(self, *codes):
         for code in codes:
-            self.daemon._process_event(dn(code))
+            press(self.daemon, code)
 
     def test_ghbdtn_space_triggers_switch(self):
         self._type(
@@ -179,8 +185,8 @@ class TestAutoSwitch(unittest.TestCase):
             ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N,
             ecodes.KEY_SPACE,
         )
-        text_calls = [c[1] for c in self.injector.calls if c[0] == 'paste_text']
-        # Пробел вставляется вместе со словом
+        text_calls = [c[1] for c in self.injector.calls if c[0] == 'inject_text']
+        # Слово перенабирается клавишами вместе с пробелом
         self.assertIn('привет ', text_calls)
 
     def test_correct_english_word_not_switched(self):
@@ -196,7 +202,7 @@ class TestAutoSwitch(unittest.TestCase):
         daemon, injector, _ = make_daemon(config=Config(auto_switch=False))
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N, ecodes.KEY_SPACE]:
-            daemon._process_event(dn(code))
+            press(daemon, code)
         self.assertEqual(injector.calls, [])
 
     def test_short_word_not_switched(self):
@@ -280,39 +286,42 @@ class TestHotkeys(unittest.TestCase):
     def test_pause_switches_word_in_buffer(self):
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N]:
-            self.daemon._process_event(dn(code))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+            press(self.daemon, code)
+        press(self.daemon, ecodes.KEY_PAUSE)
         bs_calls = [c for c in self.injector.calls if c[0] == 'inject_backspaces']
         self.assertTrue(len(bs_calls) > 0)
 
     def test_pause_with_empty_buffer_does_nothing(self):
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+        press(self.daemon, ecodes.KEY_PAUSE)
         self.assertEqual(self.injector.calls, [])
 
     def test_ctrl_pause_switch_selection(self):
         self.injector._selection = 'ghbdtn'
         self.daemon._process_event(dn(ecodes.KEY_LEFTCTRL))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+        press(self.daemon, ecodes.KEY_PAUSE)
+        self.daemon._process_event(up(ecodes.KEY_LEFTCTRL))
         replace_calls = [c for c in self.injector.calls if c[0] == 'replace_selection']
         self.assertTrue(len(replace_calls) > 0)
 
     def test_ctrl_pause_no_selection_does_nothing(self):
         self.injector._selection = None
         self.daemon._process_event(dn(ecodes.KEY_LEFTCTRL))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+        press(self.daemon, ecodes.KEY_PAUSE)
+        self.daemon._process_event(up(ecodes.KEY_LEFTCTRL))
         self.assertEqual(self.injector.calls, [])
 
     def test_shift_pause_undo(self):
         # Сначала делаем переключение, потом undo
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N]:
-            self.daemon._process_event(dn(code))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+            press(self.daemon, code)
+        press(self.daemon, ecodes.KEY_PAUSE)
         self.injector.calls.clear()
         self.lm.calls.clear()
         # Undo
         self.daemon._process_event(dn(ecodes.KEY_LEFTSHIFT))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+        press(self.daemon, ecodes.KEY_PAUSE)
+        self.daemon._process_event(up(ecodes.KEY_LEFTSHIFT))
         bs_calls = [c for c in self.injector.calls if c[0] == 'inject_backspaces']
         self.assertTrue(len(bs_calls) > 0)
 
@@ -325,8 +334,8 @@ class TestHotkeys(unittest.TestCase):
 
     def test_pause_clears_buffer_after_switch(self):
         for code in [ecodes.KEY_G, ecodes.KEY_H]:
-            self.daemon._process_event(dn(code))
-        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+            press(self.daemon, code)
+        press(self.daemon, ecodes.KEY_PAUSE)
         self.assertEqual(self.daemon._word_tracker.get_current(), '')
 
 
@@ -355,7 +364,7 @@ class TestWindowExclusion(unittest.TestCase):
         self.daemon.toggle_current_window()
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N, ecodes.KEY_SPACE]:
-            self.daemon._process_event(dn(code))
+            press(self.daemon, code)
         self.assertEqual(self.injector.calls, [])
 
     def test_excluded_app_prevents_auto_switch(self):
@@ -363,14 +372,14 @@ class TestWindowExclusion(unittest.TestCase):
         daemon.set_active_window('konsole - bash')
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N, ecodes.KEY_SPACE]:
-            daemon._process_event(dn(code))
+            press(daemon, code)
         self.assertEqual(injector.calls, [])
 
     def test_non_excluded_window_allows_switch(self):
         self.daemon.set_active_window('kate')
         for code in [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B,
                      ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N, ecodes.KEY_SPACE]:
-            self.daemon._process_event(dn(code))
+            press(self.daemon, code)
         bs_calls = [c for c in self.injector.calls if c[0] == 'inject_backspaces']
         self.assertTrue(len(bs_calls) > 0)
 
@@ -467,6 +476,70 @@ class TestNumlock(unittest.TestCase):
         daemon._process_event(dn(ecodes.KEY_G))
         daemon._process_event(dn(ecodes.KEY_KP7))
         self.assertEqual(daemon._word_tracker.get_current(), '')
+
+
+class TestDeferredActions(unittest.TestCase):
+    """Перенабор выполняется после отпускания клавиши-триггера и всех модификаторов."""
+
+    WORD = [ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_B, ecodes.KEY_D, ecodes.KEY_T, ecodes.KEY_N]
+
+    def setUp(self):
+        self.daemon, self.injector, self.lm = make_daemon()
+        for code in self.WORD:
+            press(self.daemon, code)
+
+    def _switched(self) -> bool:
+        return any(c[0] == 'inject_backspaces' for c in self.injector.calls)
+
+    def test_waits_for_trigger_release(self):
+        self.daemon._process_event(dn(ecodes.KEY_SPACE))
+        self.assertFalse(self._switched())
+        self.daemon._process_event(up(ecodes.KEY_SPACE))
+        self.assertTrue(self._switched())
+
+    def test_waits_for_shift_release(self):
+        # 'ghbdtn?' — знак с Shift: пока Shift зажат, перенабор дал бы заглавные буквы
+        self.daemon._process_event(dn(ecodes.KEY_LEFTSHIFT))
+        press(self.daemon, ecodes.KEY_SLASH)
+        self.assertFalse(self._switched())
+        self.daemon._process_event(up(ecodes.KEY_LEFTSHIFT))
+        self.assertTrue(self._switched())
+
+    def test_shift_released_first_then_trigger(self):
+        self.daemon._process_event(dn(ecodes.KEY_LEFTSHIFT))
+        self.daemon._process_event(dn(ecodes.KEY_SLASH))
+        self.daemon._process_event(up(ecodes.KEY_LEFTSHIFT))
+        self.assertFalse(self._switched())
+        self.daemon._process_event(up(ecodes.KEY_SLASH))
+        self.assertTrue(self._switched())
+
+    def test_next_key_before_release_cancels(self):
+        # Быстрый набор: следующая буква уже на экране — стирать нельзя, иначе сотрётся не то
+        self.daemon._process_event(dn(ecodes.KEY_SPACE))
+        self.daemon._process_event(dn(ecodes.KEY_A))
+        self.daemon._process_event(up(ecodes.KEY_SPACE))
+        self.assertFalse(self._switched())
+        self.assertIsNone(self.daemon._pending)
+
+    def test_other_key_release_does_not_trigger(self):
+        self.daemon._process_event(dn(ecodes.KEY_SPACE))
+        self.daemon._process_event(up(ecodes.KEY_N))
+        self.assertFalse(self._switched())
+
+    def test_undo_waits_for_shift_release(self):
+        press(self.daemon, ecodes.KEY_SPACE)
+        self.injector.calls.clear()
+        self.daemon._process_event(dn(ecodes.KEY_LEFTSHIFT))
+        press(self.daemon, ecodes.KEY_PAUSE)
+        self.assertEqual(self.injector.calls, [])
+        self.daemon._process_event(up(ecodes.KEY_LEFTSHIFT))
+        self.assertTrue(self._switched())
+
+    def test_toggle_window_immediate(self):
+        self.daemon.set_active_window('kate')
+        self.daemon._process_event(dn(ecodes.KEY_LEFTALT))
+        self.daemon._process_event(dn(ecodes.KEY_PAUSE))
+        self.assertTrue(self.daemon.is_window_excluded('kate'))
 
 if __name__ == '__main__':
     unittest.main()
