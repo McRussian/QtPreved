@@ -34,6 +34,7 @@ MIXED = [
     'Файл config.json лежит здесь. ',
     'Скажи "hello" ему (просто так). ',
     'Купил Samsung? Нет, Xiaomi. ',
+    'Open the файл, please. ',
 ]
 
 # Короткие слова (меньше min_word_length) — по одному слову язык не определить
@@ -41,7 +42,17 @@ MIXED_SHORT_WORDS = [
     'Я использую Qt и Python. ',
     'Это не bug, а feature. ',
     'Работаю в Go уже давно. ',
-    'Open the файл, please. ',
+]
+
+# Слова короче min_word_length (по умолчанию 3) не переключаются и остаются как набраны,
+# слова от 3 букв исправляются: (текст, стартовая раскладка, ожидаемый экран)
+MIXED_SHORT_WORDS_FORGETS = [
+    ('Я использую Qt и Python. ', 'ru', 'Я использую Йе и Python. '),
+    ('Я использую Qt и Python. ', 'us', 'Z использую Йе и Python. '),
+    ('Это не bug, а feature. ', 'ru', 'Это не bug, f feature. '),
+    ('Это не bug, а feature. ', 'us', 'Это не bug, f feature. '),
+    ('Работаю в Go уже давно. ', 'ru', 'Работаю в Пщ уже давно. '),
+    ('Работаю в Go уже давно. ', 'us', 'Работаю в Пщ уже давно. '),
 ]
 
 # ALL CAPS — аббревиатуры
@@ -71,8 +82,10 @@ class TestMixedUserForgetsToSwitch(_MixedChecks, unittest.TestCase):
     def test_mixed(self):
         self.check_forgets(MIXED)
 
-    def test_short_words(self):
-        self.check_forgets(MIXED_SHORT_WORDS)
+    def test_short_words_left_as_typed(self):
+        for text, start, expected in MIXED_SHORT_WORDS_FORGETS:
+            with self.subTest(text=text, start=start):
+                self.assertEqual(type_mixed(text, start, user_switches=False), expected)
 
     def test_all_caps_when_enabled(self):
         self.check_forgets(MIXED_ALL_CAPS, Config(skip_uppercase=False))

@@ -93,7 +93,10 @@ class Screen:
             return
         if code in KEYPAD_NAV_KEYS and (shift or not self.numlock):
             return  # перемещение курсора — модель экрана его не отслеживает
-        self.text += XKB[XKB_NAMES[self.layout_idx]][code][1 if shift else 0]
+        chars = XKB[XKB_NAMES[self.layout_idx]].get(code)
+        if chars is None:
+            return  # клавиша без символа (Pause, F-клавиши)
+        self.text += chars[1 if shift else 0]
 
 
 class ScreenInjector(Injector):
