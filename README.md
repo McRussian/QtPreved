@@ -62,14 +62,18 @@ EN ↔ RU (стандартная ЙЦУКЕН / QWERTY)
 > Раздел будет дополнен после первого релиза.
 
 ```bash
-# Зависимости
-sudo dnf install python3-evdev python3-pyqt6
+# Системные зависимости
+sudo dnf install python3-pyqt6 wl-clipboard
 
 # Добавить себя в группу input (нужен перелогин)
 sudo usermod -a -G input $USER
 
+# Окружение проекта (Python 3.14, системный PyQt6 доступен из venv)
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -r requirements.txt
+
 # Запуск
-python3 main.py
+.venv/bin/python main.py
 ```
 
 ## Настройки

@@ -1,11 +1,16 @@
+# Python 3.14. Окружение проекта — свой venv с доступом к системному PyQt6:
+#   python3 -m venv --system-site-packages .venv
+#   .venv/bin/pip install -r requirements.txt
+
 # Runtime
-PyQt6
-evdev
+PyQt6==6.11.0          # в venv берётся из системы (dnf: python3-pyqt6)
+evdev==2.0.0           # собирается из исходников: нужны gcc и kernel-headers
 
 # System packages (dnf):
-#   sudo dnf install wl-clipboard
+#   sudo dnf install python3-pyqt6 wl-clipboard
 #   sudo usermod -a -G input $USER
 
 # Tests (unittest встроен в Python)
-coverage
-hypothesis
+#   QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests
+coverage==7.17.5
+hypothesis==6.170.17
