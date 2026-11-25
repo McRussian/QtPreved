@@ -386,5 +386,44 @@ class TestSwitchWordRemapped(unittest.TestCase):
         self.switcher.switch_word('ghbdtn', self.en, self.ru, remapped=None)
         self.assertIn(('paste_text', 'привет'), self.injector.calls)
 
+
+class TestStopCharPastedWithWord(unittest.TestCase):
+    """Стоп-символ вставляется одной вставкой со словом, а не отдельным нажатием.
+
+    Вставка из буфера в Wayland асинхронна: отдельное нажатие пробела приложение
+    успевало обработать раньше вставки, и пробел оказывался перед словом.
+    """
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+        self.switcher, self.injector, self.lm = make_switcher()
+        self.stop_chars = []
+        self.injector.inject_stop_char = self.stop_chars.append
+
+    def test_space_pasted_with_word(self):
+        self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
+        self.assertIn(('paste_text', 'привет '), self.injector.calls)
+
+    def test_single_paste(self):
+        self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
+        pastes = [c for c in self.injector.calls if c[0] == 'paste_text']
+        self.assertEqual(len(pastes), 1)
+
+    def test_no_separate_stop_char_press(self):
+        self.switcher.switch_word('ghbdtn', self.en, self.ru, ' ')
+        self.assertEqual(self.stop_chars, [])
+
+    def test_without_stop_char_word_only(self):
+        self.switcher.switch_word('ghbdtn?', self.en, self.ru, remapped='привет,')
+        self.assertIn(('paste_text', 'привет,'), self.injector.calls)
+
+    def test_undo_pastes_original_with_stop_char(self):
+        self.switcher.switch_word('руддщб', self.ru, self.en, ' ', remapped='hello,')
+        self.injector.calls.clear()
+        self.switcher.undo()
+        self.assertEqual(self.injector.calls[0], ('inject_backspaces', 7))
+        self.assertIn(('paste_text', 'руддщб '), self.injector.calls)
+        self.assertEqual(self.stop_chars, [])
+
 if __name__ == '__main__':
     unittest.main()

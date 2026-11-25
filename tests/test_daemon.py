@@ -179,7 +179,8 @@ class TestAutoSwitch(unittest.TestCase):
             ecodes.KEY_SPACE,
         )
         text_calls = [c[1] for c in self.injector.calls if c[0] == 'paste_text']
-        self.assertIn('привет', text_calls)
+        # Пробел вставляется вместе со словом
+        self.assertIn('привет ', text_calls)
 
     def test_correct_english_word_not_switched(self):
         # 'hello' — корректное английское слово

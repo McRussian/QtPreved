@@ -97,9 +97,9 @@ class Switcher:
 
         # +1 чтобы удалить стоп-символ, уже находящийся перед курсором
         self._injector.inject_backspaces(len(word) + bool(stop_char))
-        self._injector.paste_text(remapped)
-        if stop_char:
-            self._injector.inject_stop_char(stop_char)
+        # Стоп-символ вставляется вместе со словом: вставка из буфера асинхронна,
+        # и отдельное нажатие пробела приложение может обработать раньше вставки
+        self._injector.paste_text(remapped + stop_char)
         self._layout_manager.set_layout(new_idx)
 
         self._undo_stack.append(_UndoEntry(
@@ -148,9 +148,7 @@ class Switcher:
 
         entry = self._undo_stack.pop()
         self._injector.inject_backspaces(entry.new_text_len + bool(entry.stop_char))
-        self._injector.paste_text(entry.original_text)
-        if entry.stop_char:
-            self._injector.inject_stop_char(entry.stop_char)
+        self._injector.paste_text(entry.original_text + entry.stop_char)
         self._layout_manager.set_layout(entry.original_layout_idx)
         return True
 
