@@ -278,13 +278,8 @@ class TestReplaceSelection(unittest.TestCase):
 
         with patch('subprocess.run', side_effect=side_effect) as mock:
             self.inj.replace_selection('new')
-            # Should still call wl-copy to restore (with empty string)
-            wl_copy_calls = [
-                c for c in mock.call_args_list
-                if 'wl-copy' in c[0][0]
-            ]
-            inputs = [c[1].get('input') for c in wl_copy_calls]
-            self.assertIn('', inputs)
+            # Сохранить не удалось — после вставки буфер очищается
+            self.assertIn(call(['wl-copy', '--clear']), mock.call_args_list)
 
     def test_new_text_set_before_ctrl_v(self):
         """wl-copy с новым текстом должен быть вызван до Ctrl+V."""
@@ -307,6 +302,72 @@ class TestReplaceSelection(unittest.TestCase):
         self.assertEqual(call_order.index('wl-copy'), 0)
         self.assertEqual(call_order.index('key_v'), 1)
 
+
+
+class TestClipboardPreserved(unittest.TestCase):
+    """Буфер обмена любого типа сохраняется и возвращается после вставки.
+
+    Раньше буфер читался как текст: с картинкой (PNG) чтение падало с UnicodeDecodeError
+    уже после Backspace — слово стиралось, а замена не вставлялась.
+    """
+
+    PNG = b'\x89PNG\r\n\x1a\n\x00\x00'
+
+    def setUp(self):
+        self.inj, self.ui = make_injector(paste_delay=0.0)
+
+    def _clipboard(self, types: str, data):
+        def side_effect(cmd, **kwargs):
+            if cmd == ['wl-paste', '--list-types']:
+                return _ok(types)
+            if cmd[0] == 'wl-paste':
+                return _ok(data)
+            return _ok()
+        return patch('subprocess.run', side_effect=side_effect)
+
+    def test_image_restored_with_type(self):
+        with self._clipboard('image/png\n', self.PNG) as mock:
+            self.inj.paste_text('привет ')
+        self.assertIn(call(['wl-paste', '--no-newline', '--type', 'image/png'], capture_output=True, check=True),
+                      mock.call_args_list)
+        self.assertIn(call(['wl-copy', '--type', 'image/png'], input=self.PNG), mock.call_args_list)
+
+    def test_image_does_not_block_paste(self):
+        with self._clipboard('image/png\n', self.PNG) as mock:
+            self.inj.paste_text('привет ')
+        self.assertIn(call(['wl-copy'], input='привет ', text=True, check=True), mock.call_args_list)
+        self.ui.write.assert_any_call(ecodes.EV_KEY, ecodes.KEY_V, 1)
+
+    def test_text_type_preferred(self):
+        types = 'image/png\ntext/plain\ntext/plain;charset=utf-8\n'
+        with self._clipboard(types, b'old') as mock:
+            self.inj.paste_text('new')
+        self.assertIn(call(['wl-copy', '--type', 'text/plain;charset=utf-8'], input=b'old'), mock.call_args_list)
+
+    def test_empty_clipboard_cleared_after(self):
+        with self._clipboard('', b'') as mock:
+            self.inj.paste_text('new')
+        self.assertIn(call(['wl-copy', '--clear']), mock.call_args_list)
+
+    def test_read_error_does_not_block_paste(self):
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == 'wl-paste':
+                raise UnicodeDecodeError('utf-8', b'\x89', 0, 1, 'invalid start byte')
+            return _ok()
+        with patch('subprocess.run', side_effect=side_effect) as mock:
+            self.inj.paste_text('привет ')
+        self.assertIn(call(['wl-copy'], input='привет ', text=True, check=True), mock.call_args_list)
+        self.ui.write.assert_any_call(ecodes.EV_KEY, ecodes.KEY_V, 1)
+
+    def test_restore_error_ignored(self):
+        def side_effect(cmd, **kwargs):
+            if cmd == ['wl-copy', '--clear']:
+                raise OSError('wl-copy missing')
+            if cmd[0] == 'wl-paste':
+                return _ok('')
+            return _ok()
+        with patch('subprocess.run', side_effect=side_effect):
+            self.inj.paste_text('new')
 
 class TestContextManager(unittest.TestCase):
 

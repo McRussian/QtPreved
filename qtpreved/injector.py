@@ -11,6 +11,9 @@ from qtpreved.switcher import Injector
 
 log = logging.getLogger(__name__)
 
+# Текстовые типы буфера обмена в порядке предпочтения при сохранении
+_TEXT_MIME_TYPES = ('text/plain;charset=utf-8', 'UTF8_STRING', 'text/plain')
+
 # Стоп-символы → (keycode, нужен_shift). Только US-раскладка: цифры/знаки одинаковы.
 _STOP_CHAR_KEYS: dict[str, tuple[int, bool]] = {
     ' ':  (ecodes.KEY_SPACE,      False),
@@ -98,15 +101,44 @@ class UinputInjector(Injector):
         except subprocess.CalledProcessError:
             return None
 
+    @staticmethod
+    def _save_clipboard() -> tuple[str, bytes] | None:
+        """Сохранить содержимое буфера обмена любого типа (текст, картинка) как байты.
+
+        None — буфер пуст или прочитать не удалось. Ошибка чтения не должна срывать
+        вставку: к этому моменту слово уже стёрто Backspace-ами.
+        """
+        try:
+            types = subprocess.run(
+                ['wl-paste', '--list-types'], capture_output=True, text=True, check=True,
+            ).stdout.splitlines()
+            types = [t for t in types if t]
+            if not types:
+                return None
+            mime = next((t for t in _TEXT_MIME_TYPES if t in types), types[0])
+            data = subprocess.run(
+                ['wl-paste', '--no-newline', '--type', mime], capture_output=True, check=True,
+            ).stdout
+            return mime, data
+        except Exception:
+            log.debug('буфер обмена не сохранён', exc_info=True)
+            return None
+
+    @staticmethod
+    def _restore_clipboard(saved: tuple[str, bytes] | None) -> None:
+        """Вернуть сохранённое содержимое буфера с исходным типом, пустой буфер — очистить."""
+        try:
+            if saved is None:
+                subprocess.run(['wl-copy', '--clear'])
+            else:
+                mime, data = saved
+                subprocess.run(['wl-copy', '--type', mime], input=data)
+        except OSError:
+            log.debug('буфер обмена не восстановлен', exc_info=True)
+
     def replace_selection(self, new_text: str) -> None:
         """Заменить выделение через буфер обмена: сохранить → wl-copy → Ctrl+V → восстановить."""
-        try:
-            old = subprocess.run(
-                ['wl-paste', '--no-newline'],
-                capture_output=True, text=True, check=True,
-            ).stdout
-        except subprocess.CalledProcessError:
-            old = ''
+        saved = self._save_clipboard()
 
         subprocess.run(['wl-copy'], input=new_text, text=True, check=True)
 
@@ -114,7 +146,7 @@ class UinputInjector(Injector):
 
         time.sleep(self._paste_delay)
 
-        subprocess.run(['wl-copy'], input=old, text=True, check=True)
+        self._restore_clipboard(saved)
 
     def paste_text(self, text: str) -> None:
         """Вставить текст через буфер обмена.
@@ -123,13 +155,7 @@ class UinputInjector(Injector):
         что compositor обработает запрос до прихода Ctrl+V.
         """
         log.debug('вставка %r', text)
-        try:
-            old = subprocess.run(
-                ['wl-paste', '--no-newline'],
-                capture_output=True, text=True, check=True,
-            ).stdout
-        except subprocess.CalledProcessError:
-            old = ''
+        saved = self._save_clipboard()
 
         subprocess.run(['wl-copy'], input=text, text=True, check=True)
         time.sleep(self._paste_delay)  # дать compositor принять новый буфер
@@ -137,10 +163,7 @@ class UinputInjector(Injector):
         self._press_with(ecodes.KEY_LEFTCTRL, ecodes.KEY_V)
 
         time.sleep(self._paste_delay)  # дать приложению получить буфер до восстановления
-        if old:
-            subprocess.run(['wl-copy'], input=old, text=True)
-        else:
-            subprocess.run(['wl-copy', '--clear'], text=True)
+        self._restore_clipboard(saved)
 
     def inject_stop_char(self, ch: str) -> None:
         """Инжектировать стоп-символ по таблице US-раскладки."""
