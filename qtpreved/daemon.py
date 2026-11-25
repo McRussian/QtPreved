@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import QThread, pyqtSignal
 from evdev import ecodes
 
@@ -21,6 +23,8 @@ _STOP_KEY_CHARS: dict[int, str] = {
 _KEYPAD_NUMLOCK_KEYS = frozenset(
     [getattr(ecodes, f'KEY_KP{d}') for d in '0123456789'] + [ecodes.KEY_KPDOT]
 )
+
+log = logging.getLogger(__name__)
 
 _SHIFT_KEYS = frozenset({ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT})
 _CTRL_KEYS = frozenset({ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL})
@@ -199,6 +203,7 @@ class KeyboardDaemon(QThread):
             self._reset_word()
             return
 
+        log.debug('key %d → %r, буфер %r', code, ch, self._word_tracker.get_current())
         if ch in STOP_CHARS:
             keys = self._word_tracker.get_keys()
             word = self._word_tracker.on_stop_char(ch)
@@ -247,7 +252,10 @@ class KeyboardDaemon(QThread):
         current = self.current_layout
         alt = self.alt_layout
         remapped = self._remap(word, keys, current, alt)
-        if self._detector.should_switch(word, current, alt, remapped):
+        switch = self._detector.should_switch(word, current, alt, remapped)
+        log.debug('слово %r → %r (%s→%s), стоп %r: %s', word, remapped, current.name, alt.name,
+                  stop_char, 'переключаем' if switch else 'нет')
+        if switch:
             if self._after_word:
                 prefix = 0
                 while prefix < len(word) and not word[prefix].isalpha() and not remapped[prefix].isalpha():
@@ -256,6 +264,7 @@ class KeyboardDaemon(QThread):
             try:
                 self._switcher.switch_word(word, current, alt, stop_char, remapped)
             except Exception:
+                log.exception('ошибка переключения слова %r', word)
                 return
             self.layout_changed.emit(alt.name)
 

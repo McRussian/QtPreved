@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 
@@ -7,6 +8,8 @@ from evdev import UInput, ecodes
 
 from qtpreved.kbd_map import Layout
 from qtpreved.switcher import Injector
+
+log = logging.getLogger(__name__)
 
 # Стоп-символы → (keycode, нужен_shift). Только US-раскладка: цифры/знаки одинаковы.
 _STOP_CHAR_KEYS: dict[str, tuple[int, bool]] = {
@@ -54,6 +57,7 @@ class UinputInjector(Injector):
         self._ui.syn()
 
     def inject_backspaces(self, n: int) -> None:
+        log.debug('backspace ×%d', n)
         for _ in range(n):
             self._press(ecodes.KEY_BACKSPACE)
 
@@ -108,6 +112,7 @@ class UinputInjector(Injector):
         Отличие от replace_selection: явная задержка после wl-copy гарантирует,
         что compositor обработает запрос до прихода Ctrl+V.
         """
+        log.debug('вставка %r', text)
         try:
             old = subprocess.run(
                 ['wl-paste', '--no-newline'],

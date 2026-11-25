@@ -2,6 +2,8 @@
 """Точка входа QtPreved."""
 from __future__ import annotations
 
+import logging
+import os
 import signal
 import sys
 
@@ -46,6 +48,9 @@ def _find_keyboard() -> InputDevice | None:
 
 
 def main() -> None:
+    if os.environ.get('QTPREVED_DEBUG'):
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s.%(msecs)03d %(name)s: %(message)s',
+                            datefmt='%H:%M:%S')
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
