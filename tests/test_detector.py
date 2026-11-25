@@ -81,6 +81,17 @@ class TestTrigramModel(unittest.TestCase):
     def test_edge_punctuation_lowers_score_less_than_unknown_letter(self):
         self.assertGreater(self.model.score('ab.'), self.model.score('abz'))
 
+    def test_rare_context_damped(self):
+        # Контекст 'xx' встречен 5 раз, из них 2 раза дальше 'x': без затухания
+        # p('x' | 'xx') было бы 0.6 · 2/5 = 0.24
+        model = TrigramModel({'  a': 1000, ' ab': 1000, 'ab ': 1000, ' xx': 3, 'xx ': 3, 'xxx': 2})
+        self.assertLess(model._char_prob('x', 'x', 'x'), 0.6 * 2 / 5 / 2)
+
+    def test_frequent_context_keeps_full_weight(self):
+        # Частый контекст: веса триграммы и биграммы полные (0.6 + 0.3), p3 = p2 = 1
+        model = TrigramModel({'  a': 100000, ' ab': 100000, 'ab ': 100000})
+        self.assertAlmostEqual(model._char_prob(' ', 'a', 'b'), 0.9, places=3)
+
 
 class TestScoreCached(unittest.TestCase):
 

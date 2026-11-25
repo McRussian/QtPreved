@@ -35,10 +35,16 @@ class TrigramModel:
     не обнуляет оценку слова, а только снижает её; символ вне алфавита языка
     (например ';' в английском варианте русского 'уже') снижает сильнее всего.
 
+    Веса WEIGHTS (триграмма, биграмма, символ) — потолок для частых контекстов.
+    Для редкого контекста вес уменьшается: λ · count / (count + CONTEXT_WEIGHT), остаток
+    уходит частоте символа. Иначе случайные тройки из мусора корпуса ('ъъъ' при
+    контексте 'ъъ', встреченном 5 раз) получали бы огромную вероятность.
+
     Слово дополняется границами как при построении таблицы: '  слово '.
     """
 
     WEIGHTS = (0.6, 0.3, 0.1)
+    CONTEXT_WEIGHT = 20.0
 
     def __init__(self, trigrams: dict[str, int]) -> None:
         self._c3 = trigrams
@@ -51,13 +57,15 @@ class TrigramModel:
         self._vocab = len(self._c1)
 
     def _char_prob(self, a: str, b: str, c: str) -> float:
-        w3, w2, w1 = self.WEIGHTS
-        ab = self._c2.get(a + b, 0)
-        p3 = self._c3.get(a + b + c, 0) / ab if ab else 0.0
+        w3_max, w2_max, _ = self.WEIGHTS
+        ab_count = self._c2.get(a + b, 0)
+        p3 = self._c3.get(a + b + c, 0) / ab_count if ab_count else 0.0
+        w3 = w3_max * ab_count / (ab_count + self.CONTEXT_WEIGHT)
         b_count = self._c1.get(b, 0)
         p2 = self._c2.get(b + c, 0) / b_count if b_count else 0.0
+        w2 = w2_max * b_count / (b_count + self.CONTEXT_WEIGHT)
         p1 = (self._c1.get(c, 0) + 1) / (self._total + self._vocab)
-        return w3 * p3 + w2 * p2 + w1 * p1
+        return w3 * p3 + w2 * p2 + (1 - w3 - w2) * p1
 
     def logprob(self, text: str) -> tuple[float, int]:
         """Сумма логарифмов вероятностей символов слова и число слагаемых (включая границу)."""
