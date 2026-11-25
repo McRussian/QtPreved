@@ -83,6 +83,7 @@ class KeyboardDaemon(QThread):
 
         self._word_tracker = WordTracker()
         self._after_word = False
+        self._word_layout = ''
         self._detector = Detector(config)
         self._switcher = Switcher(injector, layout_manager, config.undo_stack_depth)
 
@@ -224,6 +225,7 @@ class KeyboardDaemon(QThread):
                 self._auto_switch(word, ch, keys)
             self._after_word = self._after_word or bool(word)
         else:
+            self._check_layout_unchanged()
             self._word_tracker.add_char(ch, (code, self._shift))
             self._switcher.on_typing()
             if self._ends_word(code):
@@ -252,6 +254,18 @@ class KeyboardDaemon(QThread):
         if self._config.auto_switch:
             self._auto_switch(word, '', keys)
         self._after_word = True
+
+    def _check_layout_unchanged(self) -> None:
+        """Сбросить слово, если раскладку сменили посреди него (вручную, мимо демона).
+
+        Буквы до смены раскладки к новому слову не относятся: иначе 'цпу' + смена
+        раскладки + 'wge' склеивались в одно слово 'цпуwge' и переключались целиком.
+        """
+        layout = self.current_layout.name
+        if self._word_tracker.get_current() and layout != self._word_layout:
+            log.debug('раскладка сменилась посреди слова %r — слово сброшено', self._word_tracker.get_current())
+            self._reset_word()
+        self._word_layout = layout
 
     def _reset_word(self) -> None:
         self._word_tracker.on_reset()

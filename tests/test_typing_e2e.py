@@ -182,6 +182,32 @@ class TestTabEnterDoNotSwitch(unittest.TestCase):
         # Известное ограничение: исправляется вручную (Pause) до нажатия Enter.
         self.assertEqual(type_text('hello.\n', 'us', 'ru'), 'руддщю\n')
 
+
+class TestManualLayoutSwitchMidWord(unittest.TestCase):
+    """Смена раскладки посреди слова (вручную, мимо демона) начинает новое слово.
+
+    Было: 'цпу' в ru, смена раскладки, 'wge' в us — склеивалось в 'цпуwge',
+    демон стирал лишние символы и вставлял 'цпуцпу'.
+    """
+
+    def test_buffer_restarts(self):
+        _, daemon = type_keys([('ru', 'цпу'), ('switch', 'us'), ('us', 'wge')], 'ru')
+        self.assertEqual(daemon._word_tracker.get_current(), 'wge')
+
+    def test_parts_not_glued(self):
+        config = Config(excluded_words=['цпу'])
+        screen, _ = type_keys([('ru', 'цпу'), ('switch', 'us'), ('us', 'wge ')], 'ru', config=config)
+        self.assertEqual(screen, 'цпуwge ')
+
+    def test_only_new_part_switched(self):
+        # 'ghbdtn' в us, ручная смена на ru, 'тест' — переключать нечего, ничего не стирается
+        screen, _ = type_keys([('us', 'ghbdtn'), ('switch', 'ru'), ('ru', 'тест ')], 'us')
+        self.assertEqual(screen, 'ghbdtnтест ')
+
+    def test_same_layout_word_continues(self):
+        _, daemon = type_keys([('us', 'ghb'), ('us', 'dtn')], 'us')
+        self.assertEqual(daemon._word_tracker.get_current(), 'ghbdtn')
+
 class TestNumpad(unittest.TestCase):
     """Цифры и знаки с цифрового блока: не теряются, не режут слово, точка блока пересчитывается.
 

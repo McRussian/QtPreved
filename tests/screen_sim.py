@@ -253,9 +253,10 @@ def type_keys(
 ) -> tuple[str, KeyboardDaemon]:
     """Набор вперемешку с основной клавиатуры и цифрового блока.
 
-    parts — элементы двух видов: (раскладка, текст) — текст набирается клавишами основной
+    parts — элементы трёх видов: (раскладка, текст) — текст набирается клавишами основной
     клавиатуры так, как задуман в указанной раскладке; имя клавиши 'KEY_KP2' или
-    ('KEY_KP2', True) с Shift — нажатие конкретной клавиши.
+    ('KEY_KP2', True) с Shift — нажатие конкретной клавиши; ('switch', 'us') — пользователь
+    сам переключил раскладку (сочетанием клавиш, которое демон не видит).
     Возвращает итоговый текст на экране и демон (для проверки его состояния).
     """
     screen = Screen(start, numlock)
@@ -265,6 +266,8 @@ def type_keys(
             press_key(daemon, screen, getattr(ecodes, part))
         elif isinstance(part[1], bool):
             press_key(daemon, screen, getattr(ecodes, part[0]), part[1])
+        elif part[0] == 'switch':
+            screen.layout_idx = XKB_NAMES.index(part[1])
         else:
             layout, text = part
             for ch in text:
