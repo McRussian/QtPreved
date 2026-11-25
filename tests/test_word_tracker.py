@@ -189,5 +189,52 @@ class TestWordTrackerProperty(unittest.TestCase):
         self.assertGreaterEqual(len(tracker.get_current()), 0)
 
 
+
+class TestWordTrackerKeys(unittest.TestCase):
+    """Нажатия (keycode, shift) хранятся параллельно символам."""
+
+    def setUp(self):
+        self.tracker = WordTracker()
+
+    def test_keys_recorded(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.add_char('H', (35, True))
+        self.assertEqual(self.tracker.get_keys(), [(34, False), (35, True)])
+
+    def test_empty_keys(self):
+        self.assertEqual(self.tracker.get_keys(), [])
+
+    def test_char_without_key_gives_none(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.add_char('h')
+        self.assertIsNone(self.tracker.get_keys())
+
+    def test_backspace_removes_key(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.add_char('h', (35, False))
+        self.tracker.on_backspace()
+        self.assertEqual(self.tracker.get_keys(), [(34, False)])
+
+    def test_backspace_removes_keyless_char(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.add_char('h')
+        self.tracker.on_backspace()
+        self.assertEqual(self.tracker.get_keys(), [(34, False)])
+
+    def test_reset_clears_keys(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.on_reset()
+        self.assertEqual(self.tracker.get_keys(), [])
+
+    def test_stop_char_clears_keys(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.on_stop_char(' ')
+        self.assertEqual(self.tracker.get_keys(), [])
+
+    def test_get_keys_returns_copy(self):
+        self.tracker.add_char('g', (34, False))
+        self.tracker.get_keys().append((1, False))
+        self.assertEqual(self.tracker.get_keys(), [(34, False)])
+
 if __name__ == '__main__':
     unittest.main()

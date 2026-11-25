@@ -75,6 +75,7 @@ def should_switch(
     skip_uppercase: bool = True,
     threshold: float = 2.0,
     min_alt_score: float = 5.0,
+    remapped: str | None = None,
 ) -> bool:
     """Определить, набрано ли слово не в той раскладке.
 
@@ -83,11 +84,14 @@ def should_switch(
     (в threshold раз) и превышает минимальный порог min_alt_score.
 
     Слова короче min_length и ALL CAPS (при skip_uppercase=True) пропускаются.
+    remapped — слово в альтернативной раскладке, если уже собрано по нажатиям.
     Оценка кешируется по (слово, имя_раскладки) — масштабируется на любое
     количество раскладок без повторных вычислений.
     """
     current_core = strip_non_letters(word)
-    alt_core = strip_non_letters(current_layout.remap_to(word, alt_layout))
+    if remapped is None:
+        remapped = current_layout.remap_to(word, alt_layout)
+    alt_core = strip_non_letters(remapped)
     if max(len(current_core), len(alt_core)) < min_length:
         return False
     if skip_uppercase and alt_core.isupper():
@@ -108,7 +112,9 @@ class Detector:
     def __init__(self, config: Config) -> None:
         self._config = config
 
-    def should_switch(self, word: str, current_layout: Layout, alt_layout: Layout) -> bool:
+    def should_switch(
+        self, word: str, current_layout: Layout, alt_layout: Layout, remapped: str | None = None,
+    ) -> bool:
         """Определить, нужно ли переключить раскладку для слова.
 
         Перед анализом проверяет список excluded_words из конфига.
@@ -123,4 +129,5 @@ class Detector:
             skip_uppercase=self._config.skip_uppercase,
             threshold=self._config.detection_threshold,
             min_alt_score=self._config.min_alt_score,
+            remapped=remapped,
         )

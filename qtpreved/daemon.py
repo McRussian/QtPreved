@@ -17,6 +17,11 @@ _STOP_KEY_CHARS: dict[int, str] = {
     ecodes.KEY_TAB: '\t',
 }
 
+# Клавиши цифрового блока, которые без NumLock (или с Shift) работают как навигация
+_KEYPAD_NUMLOCK_KEYS = frozenset(
+    [getattr(ecodes, f'KEY_KP{d}') for d in '0123456789'] + [ecodes.KEY_KPDOT]
+)
+
 _SHIFT_KEYS = frozenset({ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT})
 _CTRL_KEYS = frozenset({ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL})
 _ALT_KEYS = frozenset({ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT})
@@ -195,12 +200,13 @@ class KeyboardDaemon(QThread):
             return
 
         if ch in STOP_CHARS:
+            keys = self._word_tracker.get_keys()
             word = self._word_tracker.on_stop_char(ch)
             if word and self._config.auto_switch:
-                self._auto_switch(word, ch)
+                self._auto_switch(word, ch, keys)
             self._after_word = self._after_word or bool(word)
         else:
-            self._word_tracker.add_char(ch)
+            self._word_tracker.add_char(ch, (code, self._shift))
             self._switcher.on_typing()
 
     def _reset_word(self) -> None:
@@ -211,24 +217,44 @@ class KeyboardDaemon(QThread):
         if code in _STOP_KEY_CHARS:
             return _STOP_KEY_CHARS[code]
         layout = self.current_layout
+        if code in layout.keypad:
+            if code in _KEYPAD_NUMLOCK_KEYS and (self._shift or not self._numlock_on()):
+                return None
+            return layout.keypad[code]
         return layout.upper.get(code) if self._shift else layout.lower.get(code)
 
-    def _auto_switch(self, word: str, stop_char: str = '') -> None:
+    def _numlock_on(self) -> bool:
+        """Состояние NumLock по светодиоду устройства. Не удалось прочитать — False."""
+        leds = getattr(self._device, 'leds', None)
+        if leds is None:
+            return False
+        try:
+            return ecodes.LED_NUML in leds()
+        except OSError:
+            return False
+
+    @staticmethod
+    def _remap(word: str, keys: list[tuple[int, bool]] | None, current: Layout, alt: Layout) -> str:
+        return alt.render(keys) if keys is not None else current.remap_to(word, alt)
+
+    def _auto_switch(
+        self, word: str, stop_char: str = '', keys: list[tuple[int, bool]] | None = None,
+    ) -> None:
         if self._current_window in self._excluded_windows:
             return
         if any(app in self._current_window for app in self._config.excluded_apps):
             return
         current = self.current_layout
         alt = self.alt_layout
-        if self._detector.should_switch(word, current, alt):
+        remapped = self._remap(word, keys, current, alt)
+        if self._detector.should_switch(word, current, alt, remapped):
             if self._after_word:
-                remapped = current.remap_to(word, alt)
                 prefix = 0
                 while prefix < len(word) and not word[prefix].isalpha() and not remapped[prefix].isalpha():
                     prefix += 1
-                word = word[prefix:]
+                word, remapped = word[prefix:], remapped[prefix:]
             try:
-                self._switcher.switch_word(word, current, alt, stop_char)
+                self._switcher.switch_word(word, current, alt, stop_char, remapped)
             except Exception:
                 return
             self.layout_changed.emit(alt.name)
@@ -240,7 +266,8 @@ class KeyboardDaemon(QThread):
         if word:
             current = self.current_layout
             alt = self.alt_layout
-            self._switcher.switch_word(word, current, alt)
+            remapped = self._remap(word, self._word_tracker.get_keys(), current, alt)
+            self._switcher.switch_word(word, current, alt, remapped=remapped)
             self._word_tracker.on_reset()
             self.layout_changed.emit(alt.name)
 

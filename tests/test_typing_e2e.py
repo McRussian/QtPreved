@@ -13,8 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from evdev import ecodes
+
 from qtpreved.config import Config
-from tests.screen_sim import apply_backspaces, retype, type_text
+from tests.screen_sim import _Event, apply_backspaces, retype, type_keys, type_text
 
 RU_IN_US = [
     # Разделители после слова
@@ -117,6 +119,59 @@ class TestAutoSwitchDisabled(_TypingChecks, unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(type_text(text, intended, actual, config), typed)
 
+
+
+class TestNumpad(unittest.TestCase):
+    """Цифры и знаки с цифрового блока: не теряются, не режут слово, точка блока пересчитывается.
+
+    Точка блока зависит от раскладки: '.' в us, ',' в ru. Цифры и / * - + одинаковы.
+    """
+
+    CASES = [
+        # (что набрано, стартовая раскладка, ожидаемый экран)
+        ([('ru', 'привет'), 'KEY_KP2', ('ru', ' ')], 'us', 'привет2 '),
+        ([('us', 'version'), 'KEY_KP3', 'KEY_KPDOT', ('us', ' ')], 'ru', 'version3. '),
+        ([('ru', 'привет'), 'KEY_KPDOT', ('ru', ' ')], 'us', 'привет, '),
+        ([('ru', 'кто'), 'KEY_KPMINUS', ('ru', 'то ')], 'us', 'кто-то '),
+        ([('us', 'hello '), 'KEY_KP1', 'KEY_KP0', 'KEY_KPSLASH', 'KEY_KP2', ('us', ' ')], 'ru', 'hello 10/2 '),
+        # После переключения на ru точка блока даёт запятую — как и при ручном наборе в ru
+        ([('ru', 'работа '), 'KEY_KP2', 'KEY_KPDOT', 'KEY_KP5', ('ru', ' часа ')], 'us', 'работа 2,5 часа '),
+        ([('ru', 'привет'), 'KEY_KPENTER'], 'us', 'привет\n'),
+        (['KEY_KP1', 'KEY_KP2', 'KEY_KP3', ('us', ' ')], 'us', '123 '),
+        (['KEY_KP1', 'KEY_KP2', 'KEY_KP3', ('ru', ' ')], 'ru', '123 '),
+        (['KEY_KP2', 'KEY_KPASTERISK', 'KEY_KP2', 'KEY_KPPLUS', 'KEY_KP1', ('us', ' ')], 'us', '2*2+1 '),
+    ]
+
+    def test_cases(self):
+        for parts, start, expected in self.CASES:
+            with self.subTest(parts=parts, start=start):
+                screen, _ = type_keys(parts, start)
+                self.assertEqual(screen, expected)
+
+    def test_numlock_off_navigation_resets_word(self):
+        # Без NumLock KP4 — стрелка влево: курсор ушёл, набранное слово больше не перед курсором
+        _, daemon = type_keys([('ru', 'привет'), 'KEY_KP4'], 'us', numlock=False)
+        self.assertEqual(daemon._word_tracker.get_current(), '')
+
+    def test_numlock_off_no_switch_after_navigation(self):
+        screen, _ = type_keys([('ru', 'привет'), 'KEY_KP4', ('ru', ' ')], 'us', numlock=False)
+        self.assertEqual(screen, 'ghbdtn ')
+
+    def test_shift_with_numlock_is_navigation(self):
+        _, daemon = type_keys([('ru', 'привет'), ('KEY_KP4', True)], 'us')
+        self.assertEqual(daemon._word_tracker.get_current(), '')
+
+    def test_operators_independent_of_numlock(self):
+        # / * - + на блоке не зависят от NumLock
+        _, daemon = type_keys([('us', 'ab'), 'KEY_KPSLASH', 'KEY_KPMINUS'], 'us', numlock=False)
+        self.assertEqual(daemon._word_tracker.get_current(), 'ab/-')
+
+    def test_numlock_unknown_resets_word(self):
+        # Устройство без leds() — состояние NumLock неизвестно, безопаснее сбросить слово
+        _, daemon = type_keys([('ru', 'привет')], 'us')
+        daemon._device = None
+        daemon._process_event(_Event(ecodes.KEY_KP2, 1))
+        self.assertEqual(daemon._word_tracker.get_current(), '')
 
 if __name__ == '__main__':
     unittest.main()

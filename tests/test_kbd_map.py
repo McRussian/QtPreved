@@ -5,6 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 
+from evdev import ecodes
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -160,6 +161,73 @@ class TestRemapRoundtrip(unittest.TestCase):
     def test_remap_to_same_layout_is_always_identity(self, text):
         self.assertEqual(self.en.remap_to(text, self.en), text)
 
+
+
+class TestKeypadAndRender(unittest.TestCase):
+    """Цифровой блок и сборка текста по нажатиям (keycode, shift)."""
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+
+    def test_keypad_loaded(self):
+        self.assertEqual(self.en.keypad[ecodes.KEY_KP5], '5')
+        self.assertEqual(self.ru.keypad[ecodes.KEY_KPSLASH], '/')
+
+    def test_keypad_dot_differs(self):
+        # xkb: в ru точка цифрового блока — запятая
+        self.assertEqual(self.en.keypad[ecodes.KEY_KPDOT], '.')
+        self.assertEqual(self.ru.keypad[ecodes.KEY_KPDOT], ',')
+
+    def test_keypad_not_in_reverse_map(self):
+        # '/' основной клавиатуры в ru — '.', а не '/' цифрового блока
+        self.assertEqual(self.en.remap_to('/', self.ru), '.')
+
+    def test_layouts_have_same_keys(self):
+        # Иначе render в другой раскладке потеряет символы и сдвинет позиции
+        for part in ('lower', 'upper', 'keypad'):
+            with self.subTest(part=part):
+                self.assertEqual(set(getattr(self.en, part)), set(getattr(self.ru, part)))
+
+    def test_render_main_keys(self):
+        keys = [(ecodes.KEY_G, False), (ecodes.KEY_H, False), (ecodes.KEY_SLASH, True)]
+        self.assertEqual(self.en.render(keys), 'gh?')
+        self.assertEqual(self.ru.render(keys), 'пр,')
+
+    def test_render_keypad_unchanged(self):
+        keys = [(ecodes.KEY_KP1, False), (ecodes.KEY_KPSLASH, False), (ecodes.KEY_KP2, False)]
+        self.assertEqual(self.en.render(keys), '1/2')
+        self.assertEqual(self.ru.render(keys), '1/2')
+
+    def test_render_keypad_dot(self):
+        self.assertEqual(self.en.render([(ecodes.KEY_KPDOT, False)]), '.')
+        self.assertEqual(self.ru.render([(ecodes.KEY_KPDOT, False)]), ',')
+
+    def test_render_unknown_key_empty(self):
+        self.assertEqual(self.en.render([(ecodes.KEY_F5, False)]), '')
+
+    def test_render_shift_without_upper_falls_back_to_lower(self):
+        # У пробела нет Shift-варианта в JSON
+        self.assertEqual(self.en.render([(ecodes.KEY_SPACE, True)]), ' ')
+
+    def test_render_empty(self):
+        self.assertEqual(self.en.render([]), '')
+
+    def test_render_matches_remap_for_main_keys(self):
+        # Для основной клавиатуры render по нажатиям совпадает с remap_to по символам
+        text = 'Ghbdtn, vbh! 123 "ok"?'
+        keys = [self.en._char_to_key[ch] for ch in text]
+        self.assertEqual(self.ru.render(keys), self.en.remap_to(text, self.ru))
+
+    def test_load_layout_without_keypad(self):
+        import tempfile
+        data = {'name': 'xx', 'xkb_name': 'xx', 'lower': {'KEY_A': 'a'}, 'upper': {'KEY_A': 'A'}}
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
+            json.dump(data, f)
+            path = Path(f.name)
+        try:
+            self.assertEqual(load_layout(path).keypad, {})
+        finally:
+            path.unlink()
 
 if __name__ == '__main__':
     unittest.main()

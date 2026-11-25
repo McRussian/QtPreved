@@ -51,6 +51,21 @@ for _name, _table in XKB.items():
         _rev[_lo] = (_code, False)
     _CHAR_TO_KEY[_name] = _rev
 
+# Цифровой блок добавляется после обратной таблицы: символы набираемого текста
+# берутся с основной клавиатуры, блок нажимается в тестах явно по коду клавиши.
+# Точка блока в ru — запятая (xkb: include "kpdl(comma)" в symbols/ru).
+_KEYPAD = {getattr(ecodes, f'KEY_KP{d}'): d for d in '0123456789'}
+_KEYPAD.update({
+    ecodes.KEY_KPSLASH: '/', ecodes.KEY_KPASTERISK: '*',
+    ecodes.KEY_KPMINUS: '-', ecodes.KEY_KPPLUS: '+', ecodes.KEY_KPENTER: '\n',
+})
+for _name, _dot in (('us', '.'), ('ru', ',')):
+    for _code, _ch in {**_KEYPAD, ecodes.KEY_KPDOT: _dot}.items():
+        XKB[_name][_code] = (_ch, _ch)
+
+# Без NumLock или с Shift — навигация (стрелки, Home, End, Del), символ не печатается
+KEYPAD_NAV_KEYS = frozenset([getattr(ecodes, f'KEY_KP{d}') for d in '0123456789'] + [ecodes.KEY_KPDOT])
+
 
 def retype(text: str, intended: str, actual: str) -> str:
     """Что появится на экране, если набирать `text` в раскладке `intended`, а включена `actual`."""
@@ -67,14 +82,17 @@ def retype(text: str, intended: str, actual: str) -> str:
 class Screen:
     """Текстовое поле с курсором в конце и активной раскладкой."""
 
-    def __init__(self, layout: str) -> None:
+    def __init__(self, layout: str, numlock: bool = True) -> None:
         self.text = ''
         self.layout_idx = XKB_NAMES.index(layout)
+        self.numlock = numlock
 
     def press(self, code: int, shift: bool) -> None:
         if code == ecodes.KEY_BACKSPACE:
             self.text = self.text[:-1]
             return
+        if code in KEYPAD_NAV_KEYS and (shift or not self.numlock):
+            return  # перемещение курсора — модель экрана его не отслеживает
         self.text += XKB[XKB_NAMES[self.layout_idx]][code][1 if shift else 0]
 
 
@@ -126,6 +144,35 @@ class _Event:
         self.value = value
 
 
+class ScreenDevice:
+    """Устройство ввода для демона: светодиод NumLock берётся с экрана."""
+
+    def __init__(self, screen: Screen) -> None:
+        self._screen = screen
+
+    def leds(self) -> list[int]:
+        return [ecodes.LED_NUML] if self._screen.numlock else []
+
+
+def make_daemon(screen: Screen, config: Config | None = None) -> KeyboardDaemon:
+    en, ru = load_default_layouts()
+    return KeyboardDaemon(
+        config or Config(), ScreenInjector(screen), ScreenLayoutManager(screen), en, ru,
+        device=ScreenDevice(screen),
+    )
+
+
+def press_key(daemon: KeyboardDaemon, screen: Screen, code: int, shift: bool = False) -> None:
+    """Нажать клавишу: символ попадает на экран раньше, чем демон обработает событие."""
+    if shift:
+        daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 1))
+    screen.press(code, shift)
+    daemon._process_event(_Event(code, 1))
+    daemon._process_event(_Event(code, 0))
+    if shift:
+        daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 0))
+
+
 def type_text(text: str, intended: str, actual: str, config: Config | None = None) -> str:
     """Пользователь набирает `text`, думая что включена `intended`, а включена `actual`.
 
@@ -133,23 +180,13 @@ def type_text(text: str, intended: str, actual: str, config: Config | None = Non
     Символ попадает на экран раньше, чем демон обработает событие: так и в реальности —
     демон считает, что стоп-символ уже стоит перед курсором.
     """
-    en, ru = load_default_layouts()
     screen = Screen(actual)
-    daemon = KeyboardDaemon(
-        config or Config(), ScreenInjector(screen), ScreenLayoutManager(screen), en, ru,
-    )
+    daemon = make_daemon(screen, config)
     for ch in text:
         if ch == '\b':
-            code, shift = ecodes.KEY_BACKSPACE, False
+            press_key(daemon, screen, ecodes.KEY_BACKSPACE)
         else:
-            code, shift = _CHAR_TO_KEY[intended][ch]
-        if shift:
-            daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 1))
-        screen.press(code, shift)
-        daemon._process_event(_Event(code, 1))
-        daemon._process_event(_Event(code, 0))
-        if shift:
-            daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 0))
+            press_key(daemon, screen, *_CHAR_TO_KEY[intended][ch])
     return screen.text
 
 
@@ -199,20 +236,34 @@ def type_mixed(text: str, start: str, user_switches: bool, config: Config | None
     user_switches=False — пользователь сам раскладку не меняет, всё делает автопереключение.
     user_switches=True — пользователь сам переключает раскладку перед символом другого языка.
     """
-    en, ru = load_default_layouts()
     screen = Screen(start)
-    daemon = KeyboardDaemon(
-        config or Config(), ScreenInjector(screen), ScreenLayoutManager(screen), en, ru,
-    )
+    daemon = make_daemon(screen, config)
     for ch, intended in zip(text, intended_layouts(text)):
         if user_switches:
             screen.layout_idx = XKB_NAMES.index(intended)
-        code, shift = _CHAR_TO_KEY[intended][ch]
-        if shift:
-            daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 1))
-        screen.press(code, shift)
-        daemon._process_event(_Event(code, 1))
-        daemon._process_event(_Event(code, 0))
-        if shift:
-            daemon._process_event(_Event(ecodes.KEY_LEFTSHIFT, 0))
+        press_key(daemon, screen, *_CHAR_TO_KEY[intended][ch])
     return screen.text
+
+
+def type_keys(
+    parts: list, start: str, numlock: bool = True, config: Config | None = None,
+) -> tuple[str, KeyboardDaemon]:
+    """Набор вперемешку с основной клавиатуры и цифрового блока.
+
+    parts — элементы двух видов: (раскладка, текст) — текст набирается клавишами основной
+    клавиатуры так, как задуман в указанной раскладке; имя клавиши 'KEY_KP2' или
+    ('KEY_KP2', True) с Shift — нажатие конкретной клавиши.
+    Возвращает итоговый текст на экране и демон (для проверки его состояния).
+    """
+    screen = Screen(start, numlock)
+    daemon = make_daemon(screen, config)
+    for part in parts:
+        if isinstance(part, str):
+            press_key(daemon, screen, getattr(ecodes, part))
+        elif isinstance(part[1], bool):
+            press_key(daemon, screen, getattr(ecodes, part[0]), part[1])
+        else:
+            layout, text = part
+            for ch in text:
+                press_key(daemon, screen, *_CHAR_TO_KEY[layout][ch])
+    return screen.text, daemon

@@ -281,5 +281,33 @@ class TestDetectorClass(unittest.TestCase):
         self.assertFalse(d.should_switch('ghbdtn', self.en, self.ru))
 
 
+
+class TestShouldSwitchRemapped(unittest.TestCase):
+    """Готовый remapped используется вместо remap_to, знаки по краям не мешают."""
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+
+    def test_remapped_overrides_remap(self):
+        # 'hello' с подсунутым русским вариантом 'привет' — сравниваются именно они
+        self.assertTrue(should_switch('xqzw', self.en, self.ru, remapped='привет'))
+
+    def test_remapped_garbage_prevents_switch(self):
+        self.assertFalse(should_switch('ghbdtn', self.en, self.ru, remapped='ъъъъъъ'))
+
+    def test_punctuation_around_word_ignored(self):
+        self.assertTrue(should_switch('(ghbdtn?', self.en, self.ru))
+
+    def test_only_punctuation_not_switched(self):
+        self.assertFalse(should_switch('?!...', self.en, self.ru))
+
+    def test_detector_passes_remapped(self):
+        d = Detector(Config())
+        self.assertTrue(d.should_switch('xqzw', self.en, self.ru, remapped='привет'))
+
+    def test_excluded_word_with_punctuation(self):
+        d = Detector(Config(excluded_words=['ghbdtn']))
+        self.assertFalse(d.should_switch('ghbdtn?', self.en, self.ru))
+
 if __name__ == '__main__':
     unittest.main()

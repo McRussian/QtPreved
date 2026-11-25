@@ -424,5 +424,47 @@ class TestLayoutResolution(unittest.TestCase):
         self.assertEqual(daemon.alt_layout.name, ru.name)
 
 
+
+class TestNumlock(unittest.TestCase):
+    """Состояние NumLock читается со светодиода устройства."""
+
+    class _Device:
+        def __init__(self, leds=None, error=False):
+            self._leds = leds or []
+            self._error = error
+
+        def leds(self):
+            if self._error:
+                raise OSError('device gone')
+            return self._leds
+
+    def _daemon(self, device):
+        daemon, _, _ = make_daemon()
+        daemon._device = device
+        return daemon
+
+    def test_led_on(self):
+        self.assertTrue(self._daemon(self._Device([ecodes.LED_NUML]))._numlock_on())
+
+    def test_led_off(self):
+        self.assertFalse(self._daemon(self._Device([ecodes.LED_CAPSL]))._numlock_on())
+
+    def test_no_device(self):
+        self.assertFalse(self._daemon(None)._numlock_on())
+
+    def test_read_error(self):
+        self.assertFalse(self._daemon(self._Device(error=True))._numlock_on())
+
+    def test_keypad_digit_with_numlock(self):
+        daemon = self._daemon(self._Device([ecodes.LED_NUML]))
+        daemon._process_event(dn(ecodes.KEY_KP7))
+        self.assertEqual(daemon._word_tracker.get_current(), '7')
+
+    def test_keypad_digit_without_numlock_resets(self):
+        daemon = self._daemon(self._Device([]))
+        daemon._process_event(dn(ecodes.KEY_G))
+        daemon._process_event(dn(ecodes.KEY_KP7))
+        self.assertEqual(daemon._word_tracker.get_current(), '')
+
 if __name__ == '__main__':
     unittest.main()

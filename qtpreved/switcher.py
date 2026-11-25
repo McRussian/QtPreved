@@ -81,13 +81,17 @@ class Switcher:
         current_layout: Layout,
         alt_layout: Layout,
         stop_char: str = '',
+        remapped: str | None = None,
     ) -> bool:
         """Переключить последнее набранное слово в альтернативную раскладку.
 
         stop_char — стоп-символ, уже вставленный в текст после слова (при авто-переключении).
         Если передан, удаляется как часть слова и восстанавливается после него.
+        remapped — слово в альтернативной раскладке, если уже собрано по нажатиям;
+        иначе вычисляется через remap_to.
         """
-        remapped = current_layout.remap_to(word, alt_layout)
+        if remapped is None:
+            remapped = current_layout.remap_to(word, alt_layout)
         original_idx = self._layout_manager.get_current()
         new_idx = self._find_layout_index(alt_layout)
 

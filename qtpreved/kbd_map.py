@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
@@ -15,12 +15,16 @@ class Layout:
     Хранит два словаря — без Shift и с Shift. Включает все печатные клавиши,
     в том числе цифровой ряд и знаки: символы на них различаются между раскладками
     (Shift+2 — '@' в EN и '"' в RU, '/' — '/' в EN и '.' в RU).
+
+    Цифровой блок хранится отдельно в keypad: его символы совпадают с символами
+    основной клавиатуры ('/', '.'), и общий обратный маппинг стал бы неоднозначным.
     """
 
     name: str
     xkb_name: str
     lower: dict[int, str]
     upper: dict[int, str]
+    keypad: dict[int, str] = field(default_factory=dict)
 
     @cached_property
     def _char_to_key(self) -> dict[str, tuple[int, bool]]:
@@ -55,6 +59,21 @@ class Layout:
                 result.append(ch)
         return ''.join(result)
 
+    def render(self, keys: list[tuple[int, bool]]) -> str:
+        """Собрать текст из последовательности нажатий (keycode, shift) в этой раскладке.
+
+        В отличие от remap_to однозначен для клавиш с одинаковыми символами
+        (основная '/' и '/' цифрового блока). Клавиши без символа дают ''.
+        """
+        result = []
+        for keycode, shifted in keys:
+            if keycode in self.keypad:
+                result.append(self.keypad[keycode])
+            else:
+                table = self.upper if shifted else self.lower
+                result.append(table.get(keycode) or self.lower.get(keycode, ''))
+        return ''.join(result)
+
 
 def load_layout(path: Path) -> Layout:
     """Загрузить раскладку из JSON-файла.
@@ -65,7 +84,8 @@ def load_layout(path: Path) -> Layout:
     data = json.loads(path.read_text(encoding='utf-8'))
     lower = {getattr(ecodes, key): char for key, char in data['lower'].items()}
     upper = {getattr(ecodes, key): char for key, char in data['upper'].items()}
-    return Layout(name=data['name'], xkb_name=data['xkb_name'], lower=lower, upper=upper)
+    keypad = {getattr(ecodes, key): char for key, char in data.get('keypad', {}).items()}
+    return Layout(name=data['name'], xkb_name=data['xkb_name'], lower=lower, upper=upper, keypad=keypad)
 
 
 LAYOUTS_DIR = Path(__file__).parent.parent / 'resources' / 'layouts'

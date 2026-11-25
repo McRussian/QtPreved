@@ -359,5 +359,32 @@ class TestHypothesis(unittest.TestCase):
         self.assertEqual(s.undo_stack_size, 0)
 
 
+
+class TestSwitchWordRemapped(unittest.TestCase):
+    """Готовый remapped (собранный по нажатиям) используется вместо remap_to."""
+
+    def setUp(self):
+        self.en, self.ru = load_default_layouts()
+        self.switcher, self.injector, self.lm = make_switcher()
+
+    def test_remapped_pasted(self):
+        self.switcher.switch_word('ghbdtn.', self.en, self.ru, remapped='привет,')
+        self.assertIn(('paste_text', 'привет,'), self.injector.calls)
+
+    def test_backspaces_by_original_length(self):
+        self.switcher.switch_word('ghbdtn.', self.en, self.ru, ' ', remapped='привет,')
+        self.assertEqual(self.injector.calls[0], ('inject_backspaces', 8))
+
+    def test_undo_uses_remapped_length(self):
+        self.switcher.switch_word('ab', self.en, self.ru, remapped='xyz')
+        self.injector.calls.clear()
+        self.switcher.undo()
+        self.assertEqual(self.injector.calls[0], ('inject_backspaces', 3))
+        self.assertIn(('paste_text', 'ab'), self.injector.calls)
+
+    def test_none_falls_back_to_remap_to(self):
+        self.switcher.switch_word('ghbdtn', self.en, self.ru, remapped=None)
+        self.assertIn(('paste_text', 'привет'), self.injector.calls)
+
 if __name__ == '__main__':
     unittest.main()
