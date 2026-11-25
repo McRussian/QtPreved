@@ -65,6 +65,7 @@ class KeyboardDaemon(QThread):
         self._device = device
 
         self._word_tracker = WordTracker()
+        self._after_word = False
         self._detector = Detector(config)
         self._switcher = Switcher(injector, layout_manager, config.undo_stack_depth)
 
@@ -177,11 +178,11 @@ class KeyboardDaemon(QThread):
 
     def _handle_typing(self, code: int) -> None:
         if self._ctrl or self._alt:
-            self._word_tracker.on_reset()
+            self._reset_word()
             return
 
         if code == ecodes.KEY_ESC:
-            self._word_tracker.on_reset()
+            self._reset_word()
             return
 
         if code == ecodes.KEY_BACKSPACE:
@@ -190,15 +191,21 @@ class KeyboardDaemon(QThread):
 
         ch = self._resolve_char(code)
         if ch is None:
+            self._reset_word()
             return
 
         if ch in STOP_CHARS:
             word = self._word_tracker.on_stop_char(ch)
             if word and self._config.auto_switch:
                 self._auto_switch(word, ch)
+            self._after_word = self._after_word or bool(word)
         else:
             self._word_tracker.add_char(ch)
             self._switcher.on_typing()
+
+    def _reset_word(self) -> None:
+        self._word_tracker.on_reset()
+        self._after_word = False
 
     def _resolve_char(self, code: int) -> str | None:
         if code in _STOP_KEY_CHARS:
@@ -214,6 +221,12 @@ class KeyboardDaemon(QThread):
         current = self.current_layout
         alt = self.alt_layout
         if self._detector.should_switch(word, current, alt):
+            if self._after_word:
+                remapped = current.remap_to(word, alt)
+                prefix = 0
+                while prefix < len(word) and not word[prefix].isalpha() and not remapped[prefix].isalpha():
+                    prefix += 1
+                word = word[prefix:]
             try:
                 self._switcher.switch_word(word, current, alt, stop_char)
             except Exception:

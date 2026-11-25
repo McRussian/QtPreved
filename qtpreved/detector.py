@@ -43,6 +43,15 @@ def score_text(text: str, bigrams: dict[str, float]) -> float:
     return total / (len(text) - 1)
 
 
+def strip_non_letters(text: str) -> str:
+    start, end = 0, len(text)
+    while start < end and not text[start].isalpha():
+        start += 1
+    while end > start and not text[end - 1].isalpha():
+        end -= 1
+    return text[start:end]
+
+
 @lru_cache(maxsize=2000)
 def _score_cached(text_lower: str, layout_name: str) -> float:
     """Кешированная оценка текста по имени раскладки.
@@ -77,14 +86,15 @@ def should_switch(
     Оценка кешируется по (слово, имя_раскладки) — масштабируется на любое
     количество раскладок без повторных вычислений.
     """
-    if len(word) < min_length:
+    current_core = strip_non_letters(word)
+    alt_core = strip_non_letters(current_layout.remap_to(word, alt_layout))
+    if max(len(current_core), len(alt_core)) < min_length:
         return False
-    if skip_uppercase and word.isupper():
+    if skip_uppercase and alt_core.isupper():
         return False
 
-    remapped = current_layout.remap_to(word, alt_layout)
-    current_score = _score_cached(word.lower(), current_layout.name)
-    alt_score = _score_cached(remapped.lower(), alt_layout.name)
+    current_score = _score_cached(current_core.lower(), current_layout.name)
+    alt_score = _score_cached(alt_core.lower(), alt_layout.name)
 
     return alt_score > current_score * threshold and alt_score > min_alt_score
 
@@ -104,7 +114,7 @@ class Detector:
         Перед анализом проверяет список excluded_words из конфига.
         Параметры анализа (порог, длина, регистр) тоже берутся из конфига.
         """
-        if word in self._config.excluded_words:
+        if word in self._config.excluded_words or strip_non_letters(word) in self._config.excluded_words:
             return False
         # should_switch здесь — модульная функция выше, не рекурсия
         return should_switch(

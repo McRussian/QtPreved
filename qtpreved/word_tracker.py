@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-STOP_CHARS: frozenset[str] = frozenset({
-    ' ', '\t', '\n', '\r',
-    '.', ',', '!', '?', ';', ':', '-',
-    '(', ')', '[', ']', '{', '}', '"',
-})
+STOP_CHARS: frozenset[str] = frozenset({' ', '\t', '\n', '\r'})
 
 
 class WordTracker:

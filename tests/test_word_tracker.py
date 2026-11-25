@@ -23,10 +23,10 @@ class TestStopChars(unittest.TestCase):
     def test_tab_is_stop(self):
         self.assertIn('\t', STOP_CHARS)
 
-    def test_punctuation_are_stops(self):
+    def test_punctuation_are_not_stops(self):
         for ch in '.,!?;:-()[]{}\"':
             with self.subTest(ch=ch):
-                self.assertIn(ch, STOP_CHARS)
+                self.assertNotIn(ch, STOP_CHARS)
 
     def test_apostrophe_is_not_stop(self):
         self.assertNotIn("'", STOP_CHARS)
